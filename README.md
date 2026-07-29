@@ -55,8 +55,8 @@ pnpm test
 
 ```text
 dist/衡策.app
-dist/衡策-Apple-Silicon.dmg
-dist/衡策-Apple-Silicon.dmg.sha256
+dist/HengCe-Apple-Silicon.dmg
+dist/HengCe-Apple-Silicon.dmg.sha256
 ```
 
 ## 回测说明

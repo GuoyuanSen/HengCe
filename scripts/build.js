@@ -10,7 +10,7 @@ const packageRoot = path.join(buildRoot, "package");
 const distRoot = path.join(root, "dist");
 const appName = "衡策";
 const finalApp = path.join(distRoot, `${appName}.app`);
-const finalDmg = path.join(distRoot, `${appName}-Apple-Silicon.dmg`);
+const finalDmg = path.join(distRoot, "HengCe-Apple-Silicon.dmg");
 const finalChecksum = `${finalDmg}.sha256`;
 const iconFile = path.join(root, "Resources", "AppIcon.icns");
 
