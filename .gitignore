@@ -1,0 +1,11 @@
+.build/
+.swiftpm/
+DerivedData/
+node_modules/
+dist/
+build/
+*.dmg
+*.xcarchive
+.DS_Store
+local-config.json
+*.log

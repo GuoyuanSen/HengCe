@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'"
+    >
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>衡策</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="titlebar" aria-hidden="true"></div>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <img src="../Resources/AppIcon.png" alt="">
+          <div>
+            <strong>衡策</strong>
+            <span>HENGCE</span>
+          </div>
+        </div>
+
+        <nav class="nav-list" aria-label="主要导航">
+          <button class="nav-item active" data-view="dashboard">
+            <i data-lucide="chart-no-axes-combined"></i>
+            <span>量化看板</span>
+          </button>
+          <button class="nav-item" data-view="backtest">
+            <i data-lucide="flask-conical"></i>
+            <span>策略回测</span>
+          </button>
+          <button class="nav-item" data-view="holdings">
+            <i data-lucide="briefcase-business"></i>
+            <span>持仓管理</span>
+          </button>
+          <button class="nav-item" data-view="settings">
+            <i data-lucide="sliders-horizontal"></i>
+            <span>参数设置</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-foot">
+          <div class="status-line">
+            <span class="status-dot"></span>
+            <span>公开行情</span>
+          </div>
+          <small>本地计算 · 不接管账户</small>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="toolbar">
+          <div class="search-box">
+            <i data-lucide="search"></i>
+            <input
+              id="stock-code"
+              inputmode="numeric"
+              maxlength="8"
+              value="603039"
+              aria-label="股票代码"
+              placeholder="输入6位A股代码"
+            >
+            <kbd>↵</kbd>
+          </div>
+          <button id="analyze-button" class="primary-button">
+            <span>分析</span>
+          </button>
+          <button id="refresh-button" class="icon-button" title="刷新行情">
+            <i data-lucide="refresh-cw"></i>
+          </button>
+          <div class="toolbar-spacer"></div>
+          <div id="update-time" class="update-time">等待行情</div>
+        </header>
+
+        <section id="dashboard-view" class="view active">
+          <div class="page-heading">
+            <div>
+              <h1>量化看板</h1>
+              <p>趋势、动量、量能和风险统一评分</p>
+            </div>
+            <div id="quote-title" class="quote-title">
+              <span class="skeleton short"></span>
+            </div>
+          </div>
+
+          <div id="market-strip" class="market-strip">
+            <span class="muted">指数行情加载中</span>
+          </div>
+          <div id="error-banner" class="error-banner hidden"></div>
+
+          <div id="dashboard-loading" class="loading-state">
+            <span class="spinner"></span>
+            <p>正在读取行情与历史K线</p>
+          </div>
+
+          <div id="dashboard-content" class="hidden">
+            <section class="quote-band">
+              <div class="quote-price">
+                <strong id="current-price">--</strong>
+                <span id="quote-change">--</span>
+              </div>
+              <div class="quote-facts">
+                <div><span>今开</span><strong id="quote-open">--</strong></div>
+                <div><span>最高</span><strong id="quote-high">--</strong></div>
+                <div><span>最低</span><strong id="quote-low">--</strong></div>
+                <div><span>成交额</span><strong id="quote-amount">--</strong></div>
+              </div>
+            </section>
+
+            <section id="metric-grid" class="metric-grid"></section>
+
+            <section class="chart-section">
+              <div class="section-heading">
+                <div>
+                  <h2>价格趋势</h2>
+                  <span id="chart-caption">前复权日线</span>
+                </div>
+                <div class="segmented" aria-label="图表区间">
+                  <button data-range="60">60日</button>
+                  <button class="active" data-range="120">120日</button>
+                  <button data-range="250">250日</button>
+                </div>
+              </div>
+              <div class="chart-wrap">
+                <canvas id="price-chart"></canvas>
+                <div id="chart-tooltip" class="chart-tooltip hidden"></div>
+              </div>
+            </section>
+
+            <section class="analysis-section">
+              <div class="analysis-column">
+                <div class="section-label">
+                  <i data-lucide="scan-search"></i>
+                  <h2>模型结论</h2>
+                </div>
+                <p id="analysis-summary" class="analysis-summary"></p>
+                <div id="analysis-signal" class="signal-badge"></div>
+                <div id="positive-list" class="finding-list"></div>
+              </div>
+              <div class="analysis-column risk-column">
+                <div class="section-label">
+                  <i data-lucide="shield-alert"></i>
+                  <h2>主要风险</h2>
+                </div>
+                <div id="risk-list" class="finding-list"></div>
+                <p class="model-note">
+                  模型只处理公开量价数据，不预测公告、停牌或突发事件。
+                </p>
+              </div>
+            </section>
+
+            <section class="indicator-section">
+              <h2>条件检查</h2>
+              <div id="indicator-table" class="indicator-table"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="backtest-view" class="view">
+          <div class="page-heading">
+            <div>
+              <h1>策略回测</h1>
+              <p>信号收盘确认，下一交易日开盘成交</p>
+            </div>
+            <button id="run-backtest" class="primary-button">重新计算</button>
+          </div>
+
+          <section class="control-band">
+            <div class="control-group wide">
+              <label>策略</label>
+              <div id="strategy-control" class="segmented">
+                <button class="active" data-strategy="movingAverage">均线趋势</button>
+                <button data-strategy="breakout">通道突破</button>
+                <button data-strategy="rsiReversal">RSI反转</button>
+              </div>
+            </div>
+            <div class="control-group">
+              <label for="backtest-years">回测区间</label>
+              <select id="backtest-years">
+                <option value="1">近1年</option>
+                <option value="3" selected>近3年</option>
+                <option value="5">近5年</option>
+              </select>
+            </div>
+            <div class="control-group">
+              <label>当前标的</label>
+              <strong id="backtest-symbol">--</strong>
+            </div>
+          </section>
+
+          <section id="backtest-metrics" class="metric-grid backtest-metrics"></section>
+          <section class="chart-section">
+            <div class="section-heading">
+              <div>
+                <h2>资金曲线</h2>
+                <span>已计佣金、印花税与滑点</span>
+              </div>
+            </div>
+            <div class="chart-wrap equity">
+              <canvas id="equity-chart"></canvas>
+            </div>
+          </section>
+          <section class="table-section">
+            <div class="section-heading">
+              <div>
+                <h2>交易记录</h2>
+                <span id="trade-count-label">0 笔</span>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>买入日</th>
+                    <th>卖出日</th>
+                    <th>买入价</th>
+                    <th>卖出价</th>
+                    <th>股数</th>
+                    <th>收益</th>
+                  </tr>
+                </thead>
+                <tbody id="trade-table-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="holdings-view" class="view">
+          <div class="page-heading">
+            <div>
+              <h1>持仓管理</h1>
+              <p>只保存在当前 Mac，不上传账户数据</p>
+            </div>
+            <button id="add-holding" class="primary-button">
+              <i data-lucide="plus"></i>
+              <span>添加持仓</span>
+            </button>
+          </div>
+          <section id="holding-summary" class="portfolio-band"></section>
+          <section class="table-section holdings-table-section">
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>股票</th>
+                    <th>股数</th>
+                    <th>成本</th>
+                    <th>最新价</th>
+                    <th>浮盈亏</th>
+                    <th>回本距离</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="holdings-table-body"></tbody>
+              </table>
+            </div>
+            <div id="holdings-empty" class="empty-state hidden">
+              <i data-lucide="briefcase"></i>
+              <strong>还没有持仓记录</strong>
+              <span>添加后会显示浮盈亏与回本距离</span>
+            </div>
+          </section>
+        </section>
+
+        <section id="settings-view" class="view">
+          <div class="page-heading">
+            <div>
+              <h1>参数设置</h1>
+              <p>参数变化会立即用于下一次策略回测</p>
+            </div>
+            <button id="reset-settings" class="secondary-button">恢复默认</button>
+          </div>
+          <form id="settings-form" class="settings-form">
+            <fieldset>
+              <legend>资金与费用</legend>
+              <label>
+                <span>初始资金（元）</span>
+                <input name="initialCapital" type="number" min="10000" step="10000">
+              </label>
+              <label>
+                <span>佣金率</span>
+                <input name="commissionRate" type="number" min="0" step="0.00001">
+              </label>
+              <label>
+                <span>卖出印花税率</span>
+                <input name="stampDutyRate" type="number" min="0" step="0.0001">
+              </label>
+              <label>
+                <span>单边滑点率</span>
+                <input name="slippageRate" type="number" min="0" step="0.0001">
+              </label>
+            </fieldset>
+            <fieldset>
+              <legend>策略参数</legend>
+              <label>
+                <span>快均线周期</span>
+                <input name="fastPeriod" type="number" min="2" max="60" step="1">
+              </label>
+              <label>
+                <span>慢均线周期</span>
+                <input name="slowPeriod" type="number" min="3" max="250" step="1">
+              </label>
+              <label>
+                <span>突破通道周期</span>
+                <input name="breakoutPeriod" type="number" min="10" max="120" step="1">
+              </label>
+              <label>
+                <span>硬止损（%）</span>
+                <input name="stopLossPercent" type="number" min="1" max="30" step="0.5">
+              </label>
+            </fieldset>
+          </form>
+          <section class="disclaimer">
+            <i data-lucide="info"></i>
+            <div>
+              <strong>研究工具，不是收益保证</strong>
+              <p>
+                行情接口可能延迟或中断。历史回测不代表未来表现，实盘前应完成样本外验证、模拟交易和小仓测试。
+              </p>
+            </div>
+          </section>
+          <div class="source-links">
+            <button data-url="https://github.com/fasiondog/hikyuu">Hikyuu</button>
+            <button data-url="https://github.com/microsoft/qlib">Qlib</button>
+            <button data-url="https://github.com/vnpy/vnpy">VeighNa</button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="holding-dialog">
+      <form id="holding-form" method="dialog">
+        <div class="dialog-heading">
+          <div>
+            <h2>持仓记录</h2>
+            <p>同一股票代码会覆盖原记录</p>
+          </div>
+          <button id="close-dialog" type="button" class="icon-button" title="关闭">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <label>
+          <span>股票代码</span>
+          <input name="code" maxlength="6" inputmode="numeric" required>
+        </label>
+        <label>
+          <span>股票名称</span>
+          <input name="name" maxlength="20" placeholder="可留空自动获取">
+        </label>
+        <div class="dialog-grid">
+          <label>
+            <span>持有股数</span>
+            <input name="shares" type="number" min="1" step="100" required>
+          </label>
+          <label>
+            <span>综合成本</span>
+            <input name="cost" type="number" min="0.001" step="0.001" required>
+          </label>
+        </div>
+        <button class="primary-button dialog-submit" value="default">保存</button>
+      </form>
+    </dialog>
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="../node_modules/lucide/dist/umd/lucide.js"></script>
+    <script src="engine.js"></script>
+    <script src="renderer.js"></script>
+  </body>
+</html>
