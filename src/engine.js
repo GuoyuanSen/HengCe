@@ -275,6 +275,7 @@
     let cash = config.initialCapital;
     let shares = 0;
     let entryPrice = 0;
+    let entryCost = 0;
     let entryDate = null;
     let pendingBuy = false;
     let pendingSell = false;
@@ -331,7 +332,7 @@
         const gross = exitPrice * shares;
         const fee = Math.max(5, gross * config.commissionRate);
         const stamp = gross * config.stampDutyRate;
-        const profit = gross - fee - stamp - entryPrice * shares;
+        const profit = gross - fee - stamp - entryCost;
         cash += gross - fee - stamp;
         trades.push({
           entryDate,
@@ -340,10 +341,11 @@
           exitPrice,
           shares,
           profit,
-          returnPercent: profit / (entryPrice * shares)
+          returnPercent: profit / entryCost
         });
         shares = 0;
         entryPrice = 0;
+        entryCost = 0;
         entryDate = null;
         pendingSell = false;
       }
@@ -356,6 +358,7 @@
           const fee = Math.max(5, gross * config.commissionRate);
           cash -= gross + fee;
           entryPrice = executionPrice;
+          entryCost = gross + fee;
           entryDate = bar.date;
         }
         pendingBuy = false;
@@ -366,25 +369,6 @@
       if (shares > 0) pendingSell = stop || shouldExit(index);
       else pendingBuy = shouldEnter(index);
       equityCurve.push({ date: bar.date, value: cash + shares * bar.close });
-    }
-
-    if (shares > 0) {
-      const last = bars.at(-1);
-      const gross = last.close * shares;
-      const fee = Math.max(5, gross * config.commissionRate);
-      const stamp = gross * config.stampDutyRate;
-      const profit = gross - fee - stamp - entryPrice * shares;
-      cash += gross - fee - stamp;
-      trades.push({
-        entryDate,
-        exitDate: last.date,
-        entryPrice,
-        exitPrice: last.close,
-        shares,
-        profit,
-        returnPercent: profit / (entryPrice * shares)
-      });
-      equityCurve[equityCurve.length - 1] = { date: last.date, value: cash };
     }
 
     const first = equityCurve[0];
@@ -410,6 +394,8 @@
     const deviation = Math.sqrt(variance);
     const sharpeRatio = deviation > 0 ? (mean / deviation) * Math.sqrt(252) : 0;
     const wins = trades.filter((trade) => trade.profit > 0).length;
+    const markPrice = shares > 0 ? bars.at(-1).close : 0;
+    const unrealizedProfit = shares > 0 ? markPrice * shares - entryCost : 0;
 
     return {
       totalReturn,
@@ -420,7 +406,17 @@
       winRate: trades.length ? wins / trades.length : 0,
       tradeCount: trades.length,
       equityCurve,
-      trades
+      trades,
+      openPosition: shares > 0
+        ? {
+            entryDate,
+            entryPrice,
+            shares,
+            markPrice,
+            unrealizedProfit,
+            returnPercent: unrealizedProfit / entryCost
+          }
+        : null
     };
   }
 

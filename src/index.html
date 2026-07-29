@@ -57,8 +57,10 @@
             <input
               id="stock-code"
               inputmode="numeric"
-              maxlength="8"
+              maxlength="6"
               value="603039"
+              autocomplete="off"
+              spellcheck="false"
               aria-label="股票代码"
               placeholder="输入6位A股代码"
             >
@@ -364,7 +366,7 @@
     </dialog>
     <div id="toast" class="toast hidden"></div>
 
-    <script src="../node_modules/lucide/dist/umd/lucide.js"></script>
+    <script src="../node_modules/lucide/dist/umd/lucide.min.js"></script>
     <script src="engine.js"></script>
     <script src="renderer.js"></script>
   </body>

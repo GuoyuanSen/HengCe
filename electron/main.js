@@ -1,19 +1,13 @@
 const { app, BrowserWindow, ipcMain, net, shell } = require("electron");
 const fs = require("fs");
 const path = require("path");
+const {
+  INDEX_DEFINITIONS,
+  secidFor,
+  validatedCode
+} = require("./market.js");
 
 const APP_ID = "com.guoyuansen.hengce";
-
-function normalizeCode(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/^sh|^sz/, "");
-}
-
-function secidFor(code) {
-  return /^[659]/.test(code) ? `1.${code}` : `0.${code}`;
-}
 
 async function requestJSON(url) {
   const controller = new AbortController();
@@ -23,7 +17,7 @@ async function requestJSON(url) {
       signal: controller.signal,
       headers: {
         Accept: "application/json, text/plain, */*",
-        "User-Agent": "HengCe/0.1"
+        "User-Agent": `HengCe/${app.getVersion()}`
       }
     });
     if (!response.ok) {
@@ -35,15 +29,10 @@ async function requestJSON(url) {
   }
 }
 
-async function fetchQuote(rawCode) {
-  const code = normalizeCode(rawCode);
-  if (!/^\d{6}$/.test(code)) {
-    throw new Error("请输入6位A股代码");
-  }
-
+async function fetchQuoteBySecid(code, secid, nameOverride) {
   const fields = "f43,f44,f45,f46,f47,f48,f57,f58,f60,f170";
   const params = new URLSearchParams({
-    secid: secidFor(code),
+    secid,
     fltt: "2",
     invt: "2",
     fields
@@ -58,7 +47,7 @@ async function fetchQuote(rawCode) {
 
   return {
     code: String(item.f57 || code),
-    name: item.f58 || code,
+    name: nameOverride || item.f58 || code,
     price: Number(item.f43),
     previousClose: Number(item.f60 ?? item.f43),
     open: Number(item.f46 ?? item.f43),
@@ -71,11 +60,13 @@ async function fetchQuote(rawCode) {
   };
 }
 
+async function fetchQuote(rawCode) {
+  const code = validatedCode(rawCode);
+  return fetchQuoteBySecid(code, secidFor(code));
+}
+
 async function fetchKLines(rawCode, requestedLimit = 1300) {
-  const code = normalizeCode(rawCode);
-  if (!/^\d{6}$/.test(code)) {
-    throw new Error("请输入6位A股代码");
-  }
+  const code = validatedCode(rawCode);
 
   const limit = Math.max(120, Math.min(Number(requestedLimit) || 1300, 2500));
   const params = new URLSearchParams({
@@ -119,14 +110,9 @@ async function fetchKLines(rawCode, requestedLimit = 1300) {
 }
 
 async function fetchIndices() {
-  const definitions = [
-    ["000001", "上证指数"],
-    ["399001", "深证成指"],
-    ["399006", "创业板指"]
-  ];
   const settled = await Promise.allSettled(
-    definitions.map(async ([code, name]) => {
-      const quote = await fetchQuote(code);
+    INDEX_DEFINITIONS.map(async ({ code, name, secid }) => {
+      const quote = await fetchQuoteBySecid(code, secid, name);
       return {
         code,
         name,
@@ -157,7 +143,13 @@ function createWindow() {
     }
   });
 
-  window.loadFile(path.join(__dirname, "..", "src", "index.html"));
+  window.webContents.on("will-navigate", (event, url) => {
+    if (!url.startsWith("file://")) event.preventDefault();
+  });
+  window.webContents.session.setPermissionCheckHandler(() => false);
+  window.webContents.session.setPermissionRequestHandler(
+    (_webContents, _permission, callback) => callback(false)
+  );
   if (process.env.HENGCE_CAPTURE_PATH) {
     window.webContents.once("did-finish-load", () => {
       setTimeout(async () => {
@@ -172,6 +164,7 @@ function createWindow() {
     if (/^https:\/\//.test(url)) shell.openExternal(url);
     return { action: "deny" };
   });
+  window.loadFile(path.join(__dirname, "..", "src", "index.html"));
 }
 
 app.setAppUserModelId(APP_ID);

@@ -1,4 +1,6 @@
-if (!window.hengce) {
+const isBrowserPreview = ["http:", "https:"].includes(window.location.protocol);
+
+if (!window.hengce && isBrowserPreview) {
   const demoBars = Array.from({ length: 520 }, (_, index) => {
     const date = new Date("2024-08-01T00:00:00");
     date.setDate(date.getDate() + index);
@@ -38,6 +40,18 @@ if (!window.hengce) {
       { code: "399006", name: "创业板指", price: 2248.53, percentChange: 0.67 }
     ],
     openExternal: async (url) => window.open(url, "_blank")
+  };
+}
+
+if (!window.hengce) {
+  const unavailable = async () => {
+    throw new Error("应用接口初始化失败，请重新启动或重新安装衡策。");
+  };
+  window.hengce = {
+    quote: unavailable,
+    klines: unavailable,
+    indices: unavailable,
+    openExternal: unavailable
   };
 }
 
@@ -508,13 +522,13 @@ function renderBacktest() {
       money: true
     }
   );
-  $("#trade-count-label").textContent = `${result.tradeCount} 笔`;
-  $("#trade-table-body").innerHTML = result.trades.length
-    ? result.trades
-        .slice()
-        .reverse()
-        .map(
-          (trade) => `
+  $("#trade-count-label").textContent =
+    `${result.tradeCount} 笔完成${result.openPosition ? " · 1 笔持有中" : ""}`;
+  const completedTradeRows = result.trades
+    .slice()
+    .reverse()
+    .map(
+      (trade) => `
             <tr>
               <td>${trade.entryDate}</td>
               <td>${trade.exitDate}</td>
@@ -527,9 +541,28 @@ function renderBacktest() {
               </td>
             </tr>
           `
-        )
-        .join("")
-    : '<tr><td colspan="6" class="muted">当前参数没有产生完整交易</td></tr>';
+    )
+    .join("");
+  const openPositionRow = result.openPosition
+    ? `
+        <tr>
+          <td>${result.openPosition.entryDate}</td>
+          <td>持有中</td>
+          <td>${number(result.openPosition.entryPrice)}</td>
+          <td>${number(result.openPosition.markPrice)}</td>
+          <td>${result.openPosition.shares.toLocaleString("zh-CN")}</td>
+          <td class="${directionClass(result.openPosition.unrealizedProfit)}">
+            ${compactMoney(result.openPosition.unrealizedProfit)}
+            <small>${percent(result.openPosition.returnPercent, true)} · 未实现</small>
+          </td>
+        </tr>
+      `
+    : "";
+  $("#trade-table-body").innerHTML =
+    openPositionRow ||
+    completedTradeRows
+      ? `${openPositionRow}${completedTradeRows}`
+      : '<tr><td colspan="6" class="muted">当前参数没有产生交易</td></tr>';
 }
 
 async function updateHoldingQuotes() {
@@ -669,7 +702,18 @@ function bindEvents() {
   );
   $("#analyze-button").addEventListener("click", () => loadMarketData());
   $("#refresh-button").addEventListener("click", () => loadMarketData(state.code));
-  $("#stock-code").addEventListener("keydown", (event) => {
+  const stockCodeInput = $("#stock-code");
+  stockCodeInput.addEventListener("focus", (event) => {
+    event.currentTarget.select();
+  });
+  stockCodeInput.addEventListener("input", (event) => {
+    const digits = event.currentTarget.value.replace(/\D/g, "").slice(0, 6);
+    if (event.currentTarget.value !== digits) {
+      event.currentTarget.value = digits;
+    }
+    showError("");
+  });
+  stockCodeInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") loadMarketData();
   });
   $$("[data-range]").forEach((button) =>

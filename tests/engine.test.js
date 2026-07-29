@@ -90,3 +90,28 @@ test("backtest accounts for lots, fees and next-day execution", () => {
   assert.ok(Number.isFinite(result.totalReturn));
   assert.ok(result.maxDrawdown >= 0);
 });
+
+test("backtest keeps the final open position instead of inventing a sale", () => {
+  const bars = sampleBars(120).map((bar, index) => {
+    const close = index < 75 ? 10 : 10 + (index - 74) * 0.25;
+    return {
+      ...bar,
+      open: close,
+      close,
+      high: close + 0.2,
+      low: close - 0.2
+    };
+  });
+  const result = runBacktest(bars, "movingAverage", {
+    initialCapital: 100000,
+    fastPeriod: 2,
+    slowPeriod: 8,
+    commissionRate: 0.00025,
+    slippageRate: 0
+  });
+  assert.equal(result.tradeCount, 0);
+  assert.ok(result.openPosition);
+  assert.equal(result.openPosition.shares % 100, 0);
+  assert.equal(result.openPosition.markPrice, bars.at(-1).close);
+  assert.ok(result.openPosition.unrealizedProfit > 0);
+});
