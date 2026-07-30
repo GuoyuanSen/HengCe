@@ -17,6 +17,7 @@ const {
   parseIndustryMembers,
   parseValuationSnapshot
 } = require("./valuation.js");
+const { buildHotspotSnapshot } = require("./hotspots.js");
 
 const APP_ID = "com.guoyuansen.hengce";
 const FRIENDLY_MARKET_ERROR = "行情服务暂时无响应，请检查网络后重试。";
@@ -368,6 +369,53 @@ async function fetchValuation(rawCode) {
   });
 }
 
+async function fetchBoardRanking(type, boardFilter, sortField) {
+  const params = new URLSearchParams({
+    pn: "1",
+    pz: "100",
+    po: "1",
+    np: "1",
+    fltt: "2",
+    invt: "2",
+    fid: sortField,
+    fs: boardFilter,
+    fields:
+      "f12,f14,f2,f3,f62,f184,f104,f105,f128,f136,f140,f141,f267,f268"
+  });
+  const payload = await firstAvailable(`${type}热点 ${sortField}`, [
+    () =>
+      requestJSON(
+        `https://push2delay.eastmoney.com/api/qt/clist/get?${params}`
+      ),
+    () =>
+      requestJSON(`https://push2.eastmoney.com/api/qt/clist/get?${params}`)
+  ]);
+  if (!Array.isArray(payload?.data?.diff) || !payload.data.diff.length) {
+    throw new Error(`${type}热点数据为空`);
+  }
+  return { type, payload };
+}
+
+async function fetchHotspots() {
+  const requests = [
+    ["行业", "m:90+t:2"],
+    ["概念", "m:90+t:3"]
+  ].flatMap(([type, boardFilter]) =>
+    ["f3", "f62", "f267"].map((sortField) =>
+      fetchBoardRanking(type, boardFilter, sortField)
+    )
+  );
+  const settled = await Promise.allSettled(requests);
+  const sources = settled
+    .filter((item) => item.status === "fulfilled")
+    .map((item) => item.value);
+  if (!sources.length) throw new Error(FRIENDLY_MARKET_ERROR);
+  return buildHotspotSnapshot(sources, {
+    asOf: new Date().toISOString(),
+    requestedSources: requests.length
+  });
+}
+
 function createWindow() {
   const isMac = process.platform === "darwin";
   const window = new BrowserWindow({
@@ -422,6 +470,7 @@ app.whenReady().then(() => {
   ipcMain.handle("market:klines", (_, code, limit) => fetchKLines(code, limit));
   ipcMain.handle("market:indices", () => fetchIndices());
   ipcMain.handle("market:valuation", (_, code) => fetchValuation(code));
+  ipcMain.handle("market:hotspots", () => fetchHotspots());
   ipcMain.handle("system:open-external", (_, url) => {
     if (/^https:\/\//.test(url)) return shell.openExternal(url);
     return false;

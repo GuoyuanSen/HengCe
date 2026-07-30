@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.1.4"
+  #define AppVersion "0.2.0"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\build\windows\package\HengCe-win32-x64"

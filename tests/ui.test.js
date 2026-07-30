@@ -56,6 +56,17 @@ test("valuation is isolated from the primary quote request", () => {
   assert.match(html, /合理区间是情景估算，不是目标价/);
 });
 
+test("daily hotspots are a standalone lazy-loaded view", () => {
+  assert.match(preload, /hotspots:\s*\(\)/);
+  assert.match(main, /ipcMain\.handle\("market:hotspots"/);
+  assert.match(html, /data-view="hotspots"/);
+  assert.match(html, /id="hotspots-view"/);
+  assert.match(html, /data-hotspot-mode="threeDayFlow"/);
+  assert.match(renderer, /if \(view === "hotspots"\) loadHotspots\(\)/);
+  assert.match(renderer, /window\.hengce\.hotspots\(\)/);
+  assert.match(renderer, /不等同于真实机构持仓变化/);
+});
+
 test("charts wait for visible bounds and observe container resizing", () => {
   assert.match(renderer, /if \(width < 1 \|\| height < 1\) return null/);
   assert.match(renderer, /function schedulePriceChart/);

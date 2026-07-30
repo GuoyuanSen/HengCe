@@ -19,6 +19,49 @@ if (!window.hengce && isBrowserPreview) {
     };
   });
   const last = demoBars.at(-1);
+  const demoHotspotRows = [
+    ["白酒", "行业", 82, 4.62, 38.4e8, 91.6e8, 28, 3, "舍得酒业", 9.98],
+    ["机器人", "概念", 78, 3.15, 27.2e8, 73.1e8, 46, 12, "鸣志电器", 7.42],
+    ["软件开发", "行业", 72, 2.36, 21.8e8, 55.3e8, 83, 48, "泛微网络", 3.31],
+    ["商业航天", "概念", 68, 2.12, 18.9e8, 43.7e8, 35, 17, "航天发展", 6.18],
+    ["汽车整车", "行业", 63, 1.76, 15.6e8, 39.2e8, 18, 8, "赛力斯", 4.21],
+    ["创新药", "概念", 58, 1.28, 12.1e8, 31.4e8, 41, 29, "海思科", 5.03],
+    ["消费电子", "行业", 53, 0.91, 8.7e8, 24.9e8, 52, 37, "立讯精密", 2.84],
+    ["光伏设备", "行业", 47, 0.35, 4.3e8, 17.6e8, 39, 31, "晶澳科技", 3.12]
+  ].map(
+    (
+      [
+        name,
+        type,
+        score,
+        changePercent,
+        todayNetFlow,
+        netFlow3Day,
+        upCount,
+        downCount,
+        leaderName,
+        leaderChangePercent
+      ],
+      index
+    ) => ({
+      code: `BK${String(7000 + index)}`,
+      name,
+      sourceName: name,
+      type,
+      score,
+      strength:
+        score >= 75 ? "强势" : score >= 60 ? "活跃" : score >= 45 ? "观察" : "退潮",
+      changePercent,
+      todayNetFlow,
+      todayFlowRate: todayNetFlow / 1e9,
+      netFlow3Day,
+      flowRate3Day: netFlow3Day / 2e9,
+      upCount,
+      downCount,
+      leaderName,
+      leaderChangePercent
+    })
+  );
   window.hengce = {
     quote: async (code) => ({
       code,
@@ -97,6 +140,24 @@ if (!window.hengce && isBrowserPreview) {
       fairRange: { low: 30.63, base: 43.65, high: 62.8 },
       confidence: { score: 100, label: "较高" }
     }),
+    hotspots: async () => ({
+      asOf: new Date().toISOString(),
+      sourceStatus: { loaded: 6, requested: 6, partial: false },
+      summary: {
+        totalBoards: 164,
+        strongCount: 4,
+        positive3DayCount: 79,
+        leadingTheme: "白酒",
+        marketTone: "结构轮动"
+      },
+      composite: demoHotspotRows,
+      todayFlow: [...demoHotspotRows].sort(
+        (left, right) => right.todayNetFlow - left.todayNetFlow
+      ),
+      threeDayFlow: [...demoHotspotRows].sort(
+        (left, right) => right.netFlow3Day - left.netFlow3Day
+      )
+    }),
     openExternal: async (url) => window.open(url, "_blank")
   };
 }
@@ -110,6 +171,7 @@ if (!window.hengce) {
     klines: unavailable,
     indices: unavailable,
     valuation: unavailable,
+    hotspots: unavailable,
     openExternal: unavailable
   };
 }
@@ -139,6 +201,10 @@ const state = {
   indices: [],
   valuation: null,
   valuationLoading: true,
+  hotspots: null,
+  hotspotsLoading: false,
+  hotspotsError: "",
+  hotspotMode: "composite",
   analysis: null,
   chartRange: 120,
   strategy: "movingAverage",
@@ -189,6 +255,7 @@ function percent(value, ratio = false) {
 }
 
 function compactMoney(value) {
+  if (value == null || value === "") return "--";
   const absolute = Math.abs(Number(value));
   if (!Number.isFinite(absolute)) return "--";
   if (absolute >= 1e8) return `${number(value / 1e8, 2)}亿`;
@@ -197,6 +264,9 @@ function compactMoney(value) {
 }
 
 function directionClass(value) {
+  if (value == null || value === "" || !Number.isFinite(Number(value))) {
+    return "";
+  }
   return Number(value) >= 0 ? "up" : "down";
 }
 
@@ -455,6 +525,126 @@ function renderIndices() {
       `
     )
     .join("");
+}
+
+function hotspotStat(label, value, detail) {
+  return `
+    <div class="hotspot-stat">
+      <span>${escapeHTML(label)}</span>
+      <strong>${escapeHTML(value)}</strong>
+      <small>${escapeHTML(detail)}</small>
+    </div>
+  `;
+}
+
+function renderHotspots() {
+  const loading = $("#hotspots-loading");
+  const content = $("#hotspots-content");
+  const error = $("#hotspots-error");
+  const refreshButton = $("#refresh-hotspots");
+  loading.classList.toggle("hidden", !state.hotspotsLoading);
+  content.classList.toggle(
+    "hidden",
+    state.hotspotsLoading || !state.hotspots
+  );
+  error.textContent = state.hotspotsError;
+  error.classList.toggle("hidden", !state.hotspotsError);
+  refreshButton.disabled = state.hotspotsLoading;
+  refreshButton.classList.toggle("rotating", state.hotspotsLoading);
+  if (!state.hotspots || state.hotspotsLoading) return;
+
+  const snapshot = state.hotspots;
+  const summary = snapshot.summary;
+  const sourceStatus = snapshot.sourceStatus;
+  const sourceDetail = sourceStatus.partial
+    ? `${sourceStatus.loaded}/${sourceStatus.requested} 路，部分降级`
+    : `${sourceStatus.loaded}/${sourceStatus.requested} 路完整`;
+  $("#hotspots-summary").innerHTML = [
+    hotspotStat("当前最强", summary.leadingTheme, "综合量价排名第一"),
+    hotspotStat("市场状态", summary.marketTone, "观察热点扩散程度"),
+    hotspotStat("强势板块", `${summary.strongCount} 个`, "强度评分不低于65"),
+    hotspotStat(
+      "近3日净流入",
+      `${summary.positive3DayCount} 个`,
+      "行业与概念去重统计"
+    ),
+    hotspotStat("数据覆盖", `${summary.totalBoards} 个`, sourceDetail)
+  ].join("");
+
+  const captions = {
+    composite: "涨幅、资金连续性与涨跌家数综合评分",
+    todayFlow: "按当日主力净流入金额排序",
+    threeDayFlow: "按近3日主力净流入金额排序"
+  };
+  $("#hotspots-caption").textContent = captions[state.hotspotMode];
+  const rows = snapshot[state.hotspotMode] || [];
+  $("#hotspots-table-body").innerHTML = rows.length
+    ? rows
+        .map((item, index) => {
+          const scoreClass =
+            item.score >= 75 ? "high" : item.score < 45 ? "low" : "";
+          return `
+            <tr>
+              <td>${index + 1}</td>
+              <td>
+                <div class="hotspot-board">
+                  <strong>${escapeHTML(item.name)}</strong>
+                  <small>${escapeHTML(item.code)}</small>
+                </div>
+              </td>
+              <td><span class="hotspot-type">${escapeHTML(item.type)}</span></td>
+              <td>
+                <div class="hotspot-score ${scoreClass}">
+                  <strong>${number(item.score, 0)}</strong>
+                  <span class="hotspot-score-track">
+                    <span style="width:${Math.max(0, Math.min(100, item.score))}%"></span>
+                  </span>
+                </div>
+              </td>
+              <td class="${directionClass(item.changePercent)}">${percent(item.changePercent)}</td>
+              <td class="${directionClass(item.todayNetFlow)}">${compactMoney(item.todayNetFlow)}</td>
+              <td class="${directionClass(item.netFlow3Day)}">${compactMoney(item.netFlow3Day)}</td>
+              <td>${number(item.upCount, 0)} / ${number(item.downCount, 0)}</td>
+              <td>
+                <div class="hotspot-leader">
+                  <strong>${escapeHTML(item.leaderName || "--")}</strong>
+                  <small class="${directionClass(item.leaderChangePercent)}">${percent(item.leaderChangePercent)}</small>
+                </div>
+              </td>
+            </tr>
+          `;
+        })
+        .join("")
+    : '<tr><td colspan="9" class="muted">当前口径下暂无可用热点数据</td></tr>';
+  const asOf = new Date(snapshot.asOf);
+  const timestamp = Number.isNaN(asOf.getTime())
+    ? "--"
+    : asOf.toLocaleString("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+  $("#hotspots-note").textContent =
+    `数据时间 ${timestamp} · ${sourceDetail}。主力资金为公开行情口径，不等同于真实机构持仓变化，不构成买入建议。`;
+}
+
+async function loadHotspots({ force = false } = {}) {
+  if (state.hotspots && !force) {
+    renderHotspots();
+    return;
+  }
+  state.hotspotsLoading = true;
+  state.hotspotsError = "";
+  renderHotspots();
+  try {
+    state.hotspots = await window.hengce.hotspots();
+  } catch (error) {
+    state.hotspotsError = friendlyMarketError(error);
+  } finally {
+    state.hotspotsLoading = false;
+    renderHotspots();
+  }
 }
 
 function metricCell(title, value, detail, className = "") {
@@ -932,6 +1122,7 @@ function switchView(view) {
     section.classList.toggle("active", section.id === `${view}-view`)
   );
   if (view === "backtest") requestAnimationFrame(renderBacktest);
+  if (view === "hotspots") loadHotspots();
   if (view === "holdings") updateHoldingQuotes();
   if (view === "dashboard") schedulePriceChart();
 }
@@ -942,6 +1133,19 @@ function bindEvents() {
   );
   $("#analyze-button").addEventListener("click", () => loadMarketData());
   $("#refresh-button").addEventListener("click", () => loadMarketData(state.code));
+  $("#refresh-hotspots").addEventListener("click", () =>
+    loadHotspots({ force: true })
+  );
+  $$("[data-hotspot-mode]").forEach((button) =>
+    button.addEventListener("click", () => {
+      $$("[data-hotspot-mode]").forEach((item) =>
+        item.classList.remove("active")
+      );
+      button.classList.add("active");
+      state.hotspotMode = button.dataset.hotspotMode;
+      renderHotspots();
+    })
+  );
   const stockCodeInput = $("#stock-code");
   stockCodeInput.addEventListener("focus", (event) => {
     event.currentTarget.select();

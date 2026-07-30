@@ -4,6 +4,8 @@ DerivedData/
 node_modules/
 dist/
 build/
+.cache/
+.tmp/
 *.dmg
 *.xcarchive
 .DS_Store

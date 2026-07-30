@@ -27,6 +27,10 @@
             <i data-lucide="chart-no-axes-combined"></i>
             <span>量化看板</span>
           </button>
+          <button class="nav-item" data-view="hotspots">
+            <i data-lucide="flame"></i>
+            <span>每日热点</span>
+          </button>
           <button class="nav-item" data-view="backtest">
             <i data-lucide="flask-conical"></i>
             <span>策略回测</span>
@@ -175,6 +179,60 @@
             <section class="indicator-section">
               <h2>条件检查</h2>
               <div id="indicator-table" class="indicator-table"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="hotspots-view" class="view">
+          <div class="page-heading">
+            <div>
+              <h1>每日热点</h1>
+              <p>板块强度、资金连续性与市场广度交叉验证</p>
+            </div>
+            <button id="refresh-hotspots" class="icon-button" title="刷新热点榜">
+              <i data-lucide="refresh-cw"></i>
+            </button>
+          </div>
+
+          <div id="hotspots-error" class="error-banner hidden"></div>
+          <div id="hotspots-loading" class="loading-state">
+            <span class="spinner"></span>
+            <p>正在统计行业与概念板块</p>
+          </div>
+
+          <div id="hotspots-content" class="hidden">
+            <section id="hotspots-summary" class="hotspots-summary"></section>
+            <section class="table-section hotspots-table-section">
+              <div class="section-heading">
+                <div>
+                  <h2>热点排名</h2>
+                  <span id="hotspots-caption">综合量价强度</span>
+                </div>
+                <div class="segmented" aria-label="热点榜口径">
+                  <button class="active" data-hotspot-mode="composite">综合热点</button>
+                  <button data-hotspot-mode="todayFlow">今日资金</button>
+                  <button data-hotspot-mode="threeDayFlow">近3日资金</button>
+                </div>
+              </div>
+              <div class="table-scroll">
+                <table class="hotspots-table">
+                  <thead>
+                    <tr>
+                      <th>排名</th>
+                      <th>板块</th>
+                      <th>类型</th>
+                      <th>热点强度</th>
+                      <th>今日涨幅</th>
+                      <th>今日主力净流入</th>
+                      <th>近3日净流入</th>
+                      <th>涨 / 跌</th>
+                      <th>领涨股</th>
+                    </tr>
+                  </thead>
+                  <tbody id="hotspots-table-body"></tbody>
+                </table>
+              </div>
+              <p id="hotspots-note" class="hotspots-note"></p>
             </section>
           </div>
         </section>

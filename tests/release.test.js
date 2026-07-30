@@ -18,8 +18,8 @@ const workflow = fs.readFileSync(
   "utf8"
 );
 
-test("release version is synchronized for v0.1.4", () => {
-  assert.equal(packageJson.version, "0.1.4");
+test("release version is synchronized for v0.2.0", () => {
+  assert.equal(packageJson.version, "0.2.0");
   assert.match(packageJson.scripts["build:win"], /build_windows\.js/);
 });
 

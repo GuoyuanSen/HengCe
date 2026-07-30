@@ -746,6 +746,127 @@ h2 {
   font-size: 11px;
 }
 
+.hotspots-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-bottom: 22px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.hotspot-stat {
+  min-width: 0;
+  padding: 16px 18px 16px 0;
+  border-right: 1px solid var(--line);
+}
+
+.hotspot-stat + .hotspot-stat {
+  padding-left: 18px;
+}
+
+.hotspot-stat:last-child {
+  border-right: 0;
+}
+
+.hotspot-stat span,
+.hotspot-stat small {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hotspot-stat strong {
+  display: block;
+  overflow: hidden;
+  margin: 7px 0 4px;
+  font-size: 19px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hotspots-table-section {
+  min-width: 0;
+  width: 100%;
+  margin-top: 0;
+}
+
+.hotspots-table-section .table-scroll {
+  width: 100%;
+  max-width: 100%;
+}
+
+.hotspots-table {
+  min-width: 940px;
+}
+
+.hotspots-table th:first-child,
+.hotspots-table td:first-child {
+  width: 54px;
+  text-align: center;
+}
+
+.hotspots-table th:nth-child(2),
+.hotspots-table td:nth-child(2),
+.hotspots-table th:nth-child(9),
+.hotspots-table td:nth-child(9) {
+  text-align: left;
+}
+
+.hotspot-score {
+  display: inline-grid;
+  grid-template-columns: 28px 52px;
+  align-items: center;
+  gap: 7px;
+}
+
+.hotspot-score-track {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: #e4e7eb;
+}
+
+.hotspot-score-track span {
+  display: block;
+  height: 100%;
+  background: var(--amber);
+}
+
+.hotspot-score.high .hotspot-score-track span {
+  background: var(--red);
+}
+
+.hotspot-score.low .hotspot-score-track span {
+  background: var(--green);
+}
+
+.hotspot-board {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hotspot-board small,
+.hotspot-leader small {
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.hotspot-type {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.hotspots-note {
+  margin-top: 11px;
+  color: var(--faint);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
 .chart-section,
 .table-section {
   margin-top: 20px;
@@ -1317,5 +1438,17 @@ dialog label {
 
   .backtest-metrics {
     grid-template-columns: repeat(3, 1fr);
+  }
+
+  .hotspots-summary {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .hotspot-stat:nth-child(3) {
+    border-right: 0;
+  }
+
+  .hotspot-stat:nth-child(n + 4) {
+    border-top: 1px solid var(--line);
   }
 }

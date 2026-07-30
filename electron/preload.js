@@ -7,5 +7,6 @@ contextBridge.exposeInMainWorld("hengce", {
     ipcRenderer.invoke("market:klines", code, limit),
   indices: () => ipcRenderer.invoke("market:indices"),
   valuation: (code) => ipcRenderer.invoke("market:valuation", code),
+  hotspots: () => ipcRenderer.invoke("market:hotspots"),
   openExternal: (url) => ipcRenderer.invoke("system:open-external", url)
 });
