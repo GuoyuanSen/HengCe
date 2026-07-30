@@ -9,3 +9,11 @@
 | [vnpy/vnpy](https://github.com/vnpy/vnpy) | MIT | Application modules, portfolio management and gateway boundaries |
 
 No source code from these projects is included in HengCe. The links are retained for attribution and continued study.
+
+## Bundled installer translation
+
+The Windows installer includes the official `ChineseSimplified.isl` language
+file from [jrsoftware/issrc](https://github.com/jrsoftware/issrc), pinned to
+commit `683ee7eabfbce807f901c5da83fc5ff1a3ecb693`. It is redistributed under the
+[Inno Setup License](https://github.com/jrsoftware/issrc/blob/main/license.txt)
+with its upstream notices retained.

@@ -11,6 +11,7 @@ const distRoot = path.join(root, "dist");
 const packageJson = require(path.join(root, "package.json"));
 const appName = "HengCe";
 const iconFile = path.join(root, "Resources", "AppIcon.ico");
+const languageFile = path.join(root, "scripts", "ChineseSimplified.isl");
 const portableZip = path.join(distRoot, "HengCe-Windows-x64-Portable.zip");
 const installer = path.join(distRoot, "HengCe-Windows-x64-Setup.exe");
 
@@ -140,6 +141,7 @@ async function main() {
     `/DSourceDir=${packagedDirectory}`,
     `/DOutputDir=${distRoot}`,
     `/DIconFile=${iconFile}`,
+    `/DLanguageFile=${languageFile}`,
     path.join(root, "scripts", "windows-installer.iss")
   ]);
 

@@ -31,6 +31,8 @@ test("Windows build targets x64 and emits installer and portable checksums", () 
   assert.match(windowsBuild, /writeChecksum\(portableZip\)/);
   assert.match(windowsBuild, /writeChecksum\(installer\)/);
   assert.match(windowsBuild, /"requested-execution-level":\s*"asInvoker"/);
+  assert.match(windowsBuild, /DLanguageFile/);
+  assert.match(installer, /MessagesFile:\s*"\{#LanguageFile\}"/);
 });
 
 test("Windows installer preserves user data and avoids administrator rights", () => {

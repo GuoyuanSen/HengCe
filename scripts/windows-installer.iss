@@ -10,6 +10,9 @@
 #ifndef IconFile
   #define IconFile "..\Resources\AppIcon.ico"
 #endif
+#ifndef LanguageFile
+  #define LanguageFile "ChineseSimplified.isl"
+#endif
 
 [Setup]
 AppId={{7F67F47F-8628-4B91-8F84-04D0BB26B544}
@@ -42,7 +45,7 @@ VersionInfoDescription=衡策 Windows x64 安装程序
 VersionInfoProductName=衡策
 
 [Languages]
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+Name: "chinesesimplified"; MessagesFile: "{#LanguageFile}"
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加选项:"; Flags: unchecked
