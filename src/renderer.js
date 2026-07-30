@@ -39,6 +39,64 @@ if (!window.hengce && isBrowserPreview) {
       { code: "399001", name: "深证成指", price: 10921.66, percentChange: -0.18 },
       { code: "399006", name: "创业板指", price: 2248.53, percentChange: 0.67 }
     ],
+    valuation: async (code) => ({
+      code,
+      name: code === "603039" ? "泛微网络" : "演示标的",
+      asOf: new Date().toISOString(),
+      applicable: true,
+      method: "预期EPS × 目标PE",
+      current: {
+        price: last.close,
+        peTtm: 30.57,
+        peStatic: 34.39,
+        peDynamic: 39.95,
+        pb: 3.78,
+        forwardPe: 23.22
+      },
+      earnings: {
+        expectedEps: 1.39,
+        expectedGrowth: 0.22,
+        expectationSource: "5家机构一致预期",
+        nextEstimate: { year: 2027, eps: 1.65 },
+        latestReport: {
+          reportDate: "2026-03-31",
+          reportType: "2026年一季报",
+          revenueGrowth: 1.29,
+          profitGrowth: 137.91,
+          roe: 2.42
+        },
+        guidance: {
+          reportDate: "2026-06-30",
+          type: "预增",
+          growthLow: 52.22,
+          growthHigh: 82.66
+        },
+        analystForecast: {
+          institutionCount: 5,
+          targetPriceLow: 46.91,
+          targetPriceHigh: 68
+        }
+      },
+      industry: {
+        name: "软件开发",
+        peQ25: 38.48,
+        peMedian: 85.61,
+        sampleSize: 134,
+        profitableSampleSize: 34,
+        upCount: 83,
+        downCount: 48,
+        netFlow3Day: 770289456,
+        temperature: "偏暖",
+        temperatureScore: 62
+      },
+      scenarios: [
+        { label: "保守", eps: 1.25, targetPe: 24.5, price: 30.63 },
+        { label: "基准", eps: 1.39, targetPe: 31.4, price: 43.65 },
+        { label: "乐观", eps: 1.6, targetPe: 39.25, price: 62.8 }
+      ],
+      fairRange: { low: 30.63, base: 43.65, high: 62.8 },
+      confidence: { score: 100, label: "较高" }
+    }),
     openExternal: async (url) => window.open(url, "_blank")
   };
 }
@@ -51,6 +109,7 @@ if (!window.hengce) {
     quote: unavailable,
     klines: unavailable,
     indices: unavailable,
+    valuation: unavailable,
     openExternal: unavailable
   };
 }
@@ -78,6 +137,8 @@ const state = {
   quote: null,
   bars: [],
   indices: [],
+  valuation: null,
+  valuationLoading: true,
   analysis: null,
   chartRange: 120,
   strategy: "movingAverage",
@@ -112,6 +173,7 @@ function escapeHTML(value) {
 }
 
 function number(value, digits = 2) {
+  if (value == null || value === "") return "--";
   return Number.isFinite(Number(value))
     ? Number(value).toLocaleString("zh-CN", {
         minimumFractionDigits: digits,
@@ -201,11 +263,17 @@ async function loadMarketData(code = $("#stock-code").value) {
   }
 
   state.code = normalized;
+  state.valuation = null;
+  state.valuationLoading = true;
   $("#stock-code").value = normalized;
   setLoading(true);
   showError("");
+  renderValuation();
   try {
     const indicesRequest = window.hengce.indices().catch(() => []);
+    const valuationRequest = window.hengce
+      .valuation(normalized)
+      .catch((error) => ({ error: friendlyMarketError(error) }));
     const [quote, bars] = await Promise.all([
       window.hengce.quote(normalized),
       window.hengce.klines(normalized, 1300)
@@ -223,6 +291,12 @@ async function loadMarketData(code = $("#stock-code").value) {
       state.indices = indices;
       renderIndices();
     });
+    valuationRequest.then((valuation) => {
+      if (state.code !== normalized) return;
+      state.valuation = valuation;
+      state.valuationLoading = false;
+      renderValuation();
+    });
     $("#update-time").textContent = `更新 ${new Date().toLocaleTimeString("zh-CN", {
       hour: "2-digit",
       minute: "2-digit",
@@ -234,6 +308,132 @@ async function loadMarketData(code = $("#stock-code").value) {
     setLoading(false);
     schedulePriceChart();
   }
+}
+
+function valuationMetric(label, value, detail = "") {
+  return `
+    <div class="valuation-metric">
+      <span>${escapeHTML(label)}</span>
+      <strong>${escapeHTML(value)}</strong>
+      <small>${escapeHTML(detail)}</small>
+    </div>
+  `;
+}
+
+function renderValuation() {
+  const container = $("#valuation-content");
+  const confidence = $("#valuation-confidence");
+  if (state.valuationLoading) {
+    confidence.textContent = "";
+    container.innerHTML = `
+      <div class="valuation-loading">
+        <span class="spinner"></span>
+        <span>正在读取财报与估值数据</span>
+      </div>
+    `;
+    return;
+  }
+  const model = state.valuation;
+  if (!model || model.error) {
+    confidence.textContent = "数据暂缺";
+    container.innerHTML = `
+      <div class="valuation-unavailable">
+        <i data-lucide="database-zap"></i>
+        <div>
+          <strong>估值数据暂不可用</strong>
+          <span>${escapeHTML(model?.error || "不影响行情和技术分析")}</span>
+        </div>
+      </div>
+    `;
+    refreshIcons();
+    return;
+  }
+
+  confidence.textContent =
+    `数据完整度 ${model.confidence.score}% · ${model.confidence.label}`;
+  const current = model.current;
+  const earnings = model.earnings;
+  const industry = model.industry;
+  const latest = earnings.latestReport;
+  const guidance = earnings.guidance;
+  const analyst = earnings.analystForecast;
+  const guidanceText = guidance
+    ? `${guidance.type || "业绩预告"} ${number(guidance.growthLow)}% 至 ${number(guidance.growthHigh)}%`
+    : "暂无有效业绩预告";
+  const analystTarget =
+    analyst?.targetPriceLow != null && analyst?.targetPriceHigh != null
+      ? `${number(analyst.targetPriceLow)} - ${number(analyst.targetPriceHigh)}`
+      : "--";
+
+  const summary = `
+    <div class="valuation-metrics">
+      ${valuationMetric("TTM PE", number(current.peTtm), `静态 ${number(current.peStatic)}`)}
+      ${valuationMetric("预期 PE", number(current.forwardPe), earnings.expectationSource || "预期EPS不足")}
+      ${valuationMetric("预期 EPS", number(earnings.expectedEps, 3), earnings.nextEstimate ? `${earnings.nextEstimate.year}年 ${number(earnings.nextEstimate.eps, 3)}` : "暂无下一年度预期")}
+      ${valuationMetric("行业动态PE下四分位", number(industry?.peQ25), industry ? `${industry.profitableSampleSize}个盈利样本` : "行业样本暂缺")}
+    </div>
+  `;
+
+  if (!model.applicable) {
+    container.innerHTML = `
+      ${summary}
+      <div class="valuation-warning">
+        <i data-lucide="triangle-alert"></i>
+        <div>
+          <strong>本标的不适合直接套用PE区间</strong>
+          <span>${escapeHTML(model.reason)}</span>
+        </div>
+      </div>
+    `;
+    refreshIcons();
+    return;
+  }
+
+  container.innerHTML = `
+    ${summary}
+    <div class="fair-value-band">
+      <div class="fair-value-label">
+        <span>模型合理区间</span>
+        <strong>${number(model.fairRange.low)} - ${number(model.fairRange.high)}</strong>
+        <small>基准锚点 ${number(model.fairRange.base)}</small>
+      </div>
+      <div class="scenario-grid">
+        ${model.scenarios
+          .map(
+            (scenario) => `
+              <div class="scenario-item">
+                <span>${escapeHTML(scenario.label)}</span>
+                <strong>${number(scenario.price)}</strong>
+                <small>EPS ${number(scenario.eps, 3)} × PE ${number(scenario.targetPe, 1)}</small>
+              </div>
+            `
+          )
+          .join("")}
+      </div>
+    </div>
+    <div class="valuation-evidence">
+      <div>
+        <span>最新财报</span>
+        <strong>${escapeHTML(latest?.reportType || "--")}</strong>
+        <small>营收 ${percent(latest?.revenueGrowth)} · 净利 ${percent(latest?.profitGrowth)}</small>
+      </div>
+      <div>
+        <span>公司业绩预告</span>
+        <strong>${escapeHTML(guidanceText)}</strong>
+        <small>${escapeHTML(guidance?.reportDate || "公告数据暂缺")}</small>
+      </div>
+      <div>
+        <span>行业景气代理</span>
+        <strong>${escapeHTML(industry ? `${industry.name} · ${industry.temperature}` : "--")}</strong>
+        <small>${industry ? `上涨 ${industry.upCount} / 下跌 ${industry.downCount} · 近3日 ${compactMoney(industry.netFlow3Day)}` : "行业资金数据暂缺"}</small>
+      </div>
+      <div>
+        <span>机构目标区间</span>
+        <strong>${analystTarget}</strong>
+        <small>${analyst ? `${analyst.institutionCount}家机构，仅作外部参照` : "无一致预期数据"}</small>
+      </div>
+    </div>
+  `;
 }
 
 function renderIndices() {

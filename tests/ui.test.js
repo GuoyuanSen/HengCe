@@ -47,6 +47,15 @@ test("market failures are reduced to a friendly message", () => {
   assert.match(renderer, /window\.hengce\.indices\(\)\.catch\(\(\) => \[\]\)/);
 });
 
+test("valuation is isolated from the primary quote request", () => {
+  assert.match(preload, /valuation:\s*\(code\)/);
+  assert.match(main, /ipcMain\.handle\("market:valuation"/);
+  assert.match(renderer, /const valuationRequest = window\.hengce/);
+  assert.match(renderer, /\.valuation\(normalized\)/);
+  assert.match(html, /id="valuation-content"/);
+  assert.match(html, /合理区间是情景估算，不是目标价/);
+});
+
 test("charts wait for visible bounds and observe container resizing", () => {
   assert.match(renderer, /if \(width < 1 \|\| height < 1\) return null/);
   assert.match(renderer, /function schedulePriceChart/);

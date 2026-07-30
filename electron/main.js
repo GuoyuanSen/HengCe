@@ -9,6 +9,14 @@ const {
   tencentSymbolFor,
   validatedCode
 } = require("./market.js");
+const {
+  buildValuationModel,
+  parseAnalystForecast,
+  parseCompanyForecast,
+  parseFinancialReports,
+  parseIndustryMembers,
+  parseValuationSnapshot
+} = require("./valuation.js");
 
 const APP_ID = "com.guoyuansen.hengce";
 const FRIENDLY_MARKET_ERROR = "行情服务暂时无响应，请检查网络后重试。";
@@ -242,6 +250,124 @@ async function fetchIndices() {
     .map((item) => item.value);
 }
 
+function fetchDataset(reportName, code) {
+  const params = new URLSearchParams({
+    reportName,
+    columns: "ALL",
+    filter: `(SECURITY_CODE="${code}")`,
+    pageNumber: "1",
+    pageSize: "100",
+    source: "WEB",
+    client: "WEB"
+  });
+  return requestJSON(
+    `https://datacenter-web.eastmoney.com/api/data/v1/get?${params}`
+  );
+}
+
+function fetchValuationSnapshot(code) {
+  const params = new URLSearchParams({
+    secid: secidFor(code),
+    fltt: "2",
+    invt: "2",
+    fields: "f43,f57,f58,f116,f117,f162,f163,f164,f167"
+  });
+  return firstAvailable(`估值快照 ${code}`, [
+    () =>
+      requestJSON(
+        `https://push2delay.eastmoney.com/api/qt/stock/get?${params}`
+      ),
+    () =>
+      requestJSON(`https://push2.eastmoney.com/api/qt/stock/get?${params}`)
+  ]);
+}
+
+async function fetchIndustryMembers(industryCode) {
+  if (!/^BK\d+$/.test(industryCode)) return [];
+  const fields = "f12,f14,f2,f3,f9,f23,f62,f267";
+  const fetchPage = (pageNumber) => {
+    const params = new URLSearchParams({
+      pn: String(pageNumber),
+      pz: "100",
+      po: "1",
+      np: "1",
+      fltt: "2",
+      invt: "2",
+      fid: "f3",
+      fs: `b:${industryCode}`,
+      fields
+    });
+    return firstAvailable(`行业成分 ${industryCode}`, [
+      () =>
+        requestJSON(
+          `https://push2delay.eastmoney.com/api/qt/clist/get?${params}`
+        ),
+      () =>
+        requestJSON(`https://push2.eastmoney.com/api/qt/clist/get?${params}`)
+    ]);
+  };
+  const firstPage = await fetchPage(1);
+  const total = Number(firstPage?.data?.total || 0);
+  const pageCount = Math.min(5, Math.ceil(total / 100));
+  if (pageCount <= 1) return [firstPage];
+  const remaining = await Promise.allSettled(
+    Array.from({ length: pageCount - 1 }, (_, index) => fetchPage(index + 2))
+  );
+  return [
+    firstPage,
+    ...remaining
+      .filter((item) => item.status === "fulfilled")
+      .map((item) => item.value)
+  ];
+}
+
+async function fetchValuation(rawCode) {
+  const code = validatedCode(rawCode);
+  const [snapshotResult, reportsResult, forecastResult, analystResult] =
+    await Promise.allSettled([
+      fetchValuationSnapshot(code),
+      fetchDataset("RPT_LICO_FN_CPD", code),
+      fetchDataset("RPT_PUBLIC_OP_NEWPREDICT", code),
+      fetchDataset("RPT_WEB_RESPREDICT", code)
+    ]);
+  if (snapshotResult.status !== "fulfilled") {
+    throw snapshotResult.reason;
+  }
+
+  const snapshot = parseValuationSnapshot(snapshotResult.value, code);
+  const reports =
+    reportsResult.status === "fulfilled"
+      ? parseFinancialReports(reportsResult.value)
+      : [];
+  const companyForecast =
+    forecastResult.status === "fulfilled"
+      ? parseCompanyForecast(forecastResult.value)
+      : { parentProfit: null, deductedProfit: null };
+  const analystForecast =
+    analystResult.status === "fulfilled"
+      ? parseAnalystForecast(analystResult.value)
+      : null;
+  const industryName =
+    reports[0]?.industryName || analystForecast?.industryName || "";
+  let industry = null;
+  if (reports[0]?.industryCode) {
+    try {
+      const pages = await fetchIndustryMembers(reports[0].industryCode);
+      industry = parseIndustryMembers(pages, industryName);
+    } catch (error) {
+      console.warn(`行业估值暂不可用：${error?.message}`);
+    }
+  }
+
+  return buildValuationModel({
+    snapshot,
+    reports,
+    companyForecast,
+    analystForecast,
+    industry
+  });
+}
+
 function createWindow() {
   const isMac = process.platform === "darwin";
   const window = new BrowserWindow({
@@ -295,6 +421,7 @@ app.whenReady().then(() => {
   ipcMain.handle("market:quote", (_, code) => fetchQuote(code));
   ipcMain.handle("market:klines", (_, code, limit) => fetchKLines(code, limit));
   ipcMain.handle("market:indices", () => fetchIndices());
+  ipcMain.handle("market:valuation", (_, code) => fetchValuation(code));
   ipcMain.handle("system:open-external", (_, url) => {
     if (/^https:\/\//.test(url)) return shell.openExternal(url);
     return false;
