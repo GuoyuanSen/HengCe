@@ -173,6 +173,21 @@ function showError(message) {
   banner.classList.toggle("hidden", !message);
 }
 
+function friendlyMarketError(error) {
+  const raw = String(error?.message || error || "");
+  const message = raw.replace(
+    /^Error invoking remote method '[^']+': Error:\s*/,
+    ""
+  );
+  if (
+    !message ||
+    /ERR_|fetch failed|aborted|network|empty response|空响应/i.test(message)
+  ) {
+    return "行情服务暂时无响应，请检查网络后重试。";
+  }
+  return message;
+}
+
 async function loadMarketData(code = $("#stock-code").value) {
   const normalized = String(code).trim().toLowerCase().replace(/^sh|^sz/, "");
   if (!/^\d{6}$/.test(normalized)) {
@@ -185,29 +200,34 @@ async function loadMarketData(code = $("#stock-code").value) {
   setLoading(true);
   showError("");
   try {
-    const [quote, bars, indices] = await Promise.all([
+    const indicesRequest = window.hengce.indices().catch(() => []);
+    const [quote, bars] = await Promise.all([
       window.hengce.quote(normalized),
-      window.hengce.klines(normalized, 1300),
-      window.hengce.indices()
+      window.hengce.klines(normalized, 1300)
     ]);
     state.quote = quote;
     state.bars = bars;
-    state.indices = indices;
+    state.indices = [];
     state.analysis = analyze(bars);
     state.quotes.set(quote.code, quote);
     renderDashboard();
     renderBacktest();
     renderIndices();
     renderHoldings();
+    indicesRequest.then((indices) => {
+      state.indices = indices;
+      renderIndices();
+    });
     $("#update-time").textContent = `更新 ${new Date().toLocaleTimeString("zh-CN", {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit"
     })}`;
   } catch (error) {
-    showError(error?.message || "行情加载失败，请稍后重试。");
+    showError(friendlyMarketError(error));
   } finally {
     setLoading(false);
+    schedulePriceChart();
   }
 }
 
@@ -346,18 +366,21 @@ function renderDashboard() {
     .join("");
   $("#chart-caption").textContent =
     `前复权日线 · ${state.bars.at(-1)?.date || "--"}`;
-  drawPriceChart();
+  schedulePriceChart();
   refreshIcons();
 }
 
 function prepareCanvas(canvas) {
   const bounds = canvas.getBoundingClientRect();
   const ratio = Math.max(1, window.devicePixelRatio || 1);
-  const width = Math.max(300, Math.floor(bounds.width));
-  const height = Math.max(180, Math.floor(bounds.height));
-  if (canvas.width !== width * ratio || canvas.height !== height * ratio) {
-    canvas.width = width * ratio;
-    canvas.height = height * ratio;
+  const width = Math.floor(bounds.width);
+  const height = Math.floor(bounds.height);
+  if (width < 1 || height < 1) return null;
+  const pixelWidth = Math.round(width * ratio);
+  const pixelHeight = Math.round(height * ratio);
+  if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
   }
   const context = canvas.getContext("2d");
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -366,8 +389,9 @@ function prepareCanvas(canvas) {
 }
 
 function drawLineChart(canvas, points, options = {}) {
-  const { context, width, height } = prepareCanvas(canvas);
-  if (!points.length) return null;
+  const prepared = prepareCanvas(canvas);
+  if (!prepared || !points.length) return null;
+  const { context, width, height } = prepared;
   const pad = { left: 12, right: 64, top: 16, bottom: 28 };
   const rawValues = points.map((point) => point.value).filter(Number.isFinite);
   if (Number.isFinite(options.support)) rawValues.push(options.support);
@@ -472,6 +496,17 @@ function drawPriceChart() {
     }
   );
   $("#price-chart")._geometry = geometry;
+}
+
+let priceChartFrame = 0;
+
+function schedulePriceChart() {
+  cancelAnimationFrame(priceChartFrame);
+  priceChartFrame = requestAnimationFrame(() => {
+    if ($("#dashboard-view").classList.contains("active")) {
+      drawPriceChart();
+    }
+  });
 }
 
 function filteredBacktestBars() {
@@ -693,7 +728,7 @@ function switchView(view) {
   );
   if (view === "backtest") requestAnimationFrame(renderBacktest);
   if (view === "holdings") updateHoldingQuotes();
-  if (view === "dashboard") requestAnimationFrame(drawPriceChart);
+  if (view === "dashboard") schedulePriceChart();
 }
 
 function bindEvents() {
@@ -721,7 +756,7 @@ function bindEvents() {
       $$("[data-range]").forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
       state.chartRange = Number(button.dataset.range);
-      drawPriceChart();
+      schedulePriceChart();
     })
   );
   $$("[data-strategy]").forEach((button) =>
@@ -816,10 +851,18 @@ function bindEvents() {
   priceCanvas.addEventListener("mouseleave", () =>
     $("#chart-tooltip").classList.add("hidden")
   );
-  window.addEventListener("resize", () => {
-    drawPriceChart();
-    renderBacktest();
+  const chartResizeObserver = new ResizeObserver((entries) => {
+    if (entries.some((entry) => entry.target.contains(priceCanvas))) {
+      schedulePriceChart();
+    }
+    if (
+      entries.some((entry) => entry.target.contains($("#equity-chart"))) &&
+      $("#backtest-view").classList.contains("active")
+    ) {
+      requestAnimationFrame(renderBacktest);
+    }
   });
+  $$(".chart-wrap").forEach((wrapper) => chartResizeObserver.observe(wrapper));
 }
 
 populateSettings();

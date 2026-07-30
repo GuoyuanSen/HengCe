@@ -37,3 +37,16 @@ test("demo quotes are limited to browser previews", () => {
   assert.match(renderer, /if \(!window\.hengce && isBrowserPreview\)/);
   assert.match(renderer, /应用接口初始化失败/);
 });
+
+test("market failures are reduced to a friendly message", () => {
+  assert.match(renderer, /function friendlyMarketError/);
+  assert.match(renderer, /Error invoking remote method/);
+  assert.match(renderer, /行情服务暂时无响应，请检查网络后重试/);
+  assert.match(renderer, /window\.hengce\.indices\(\)\.catch\(\(\) => \[\]\)/);
+});
+
+test("charts wait for visible bounds and observe container resizing", () => {
+  assert.match(renderer, /if \(width < 1 \|\| height < 1\) return null/);
+  assert.match(renderer, /function schedulePriceChart/);
+  assert.match(renderer, /new ResizeObserver/);
+});
