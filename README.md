@@ -1,6 +1,6 @@
 # 衡策 HengCe
 
-衡策是一款面向普通投资者的 macOS A 股量化研究工具。它把行情、技术因子、持仓风险和策略回测放在一个安静、可执行的界面中，不连接券商账户，也不会自动下单。
+衡策是一款面向普通投资者的 macOS 与 Windows A 股量化研究工具。它把行情、技术因子、持仓风险和策略回测放在一个安静、可执行的界面中，不连接券商账户，也不会自动下单。
 
 ![衡策应用图标](Resources/AppIcon.png)
 
@@ -12,7 +12,7 @@
 - 本地持仓管理、浮盈亏与回本距离
 - 均线趋势、通道突破、RSI 反转三类回测
 - 下一交易日成交，计入佣金、印花税、滑点和 100 股交易单位
-- Apple Silicon 安装包，数据只保存在本机
+- Apple Silicon 与 Windows x64 安装包，数据只保存在本机
 
 ## 项目取舍
 
@@ -26,8 +26,8 @@
 
 ## 系统要求
 
-- macOS 12 或更高版本
-- Apple Silicon Mac
+- macOS 12 或更高版本、Apple Silicon Mac
+- Windows 10/11 x64
 - 网络连接，用于读取公开行情
 
 ## 开发
@@ -51,13 +51,25 @@ pnpm test
 ./scripts/build_app.sh
 ```
 
+Windows x64 版本需在 Windows 环境构建：
+
+```powershell
+pnpm run build:win
+```
+
 构建产物：
 
 ```text
 dist/衡策.app
 dist/HengCe-Apple-Silicon.dmg
 dist/HengCe-Apple-Silicon.dmg.sha256
+dist/HengCe-Windows-x64-Setup.exe
+dist/HengCe-Windows-x64-Setup.exe.sha256
+dist/HengCe-Windows-x64-Portable.zip
+dist/HengCe-Windows-x64-Portable.zip.sha256
 ```
+
+公开测试安装包目前没有购买商业代码签名证书。Windows 首次运行可能显示 SmartScreen 未知发布者提示；请从本仓库 Release 下载并使用同目录的 SHA-256 文件核对完整性。
 
 ## 回测说明
 

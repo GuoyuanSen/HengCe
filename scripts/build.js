@@ -13,6 +13,7 @@ const finalApp = path.join(distRoot, `${appName}.app`);
 const finalDmg = path.join(distRoot, "HengCe-Apple-Silicon.dmg");
 const finalChecksum = `${finalDmg}.sha256`;
 const iconFile = path.join(root, "Resources", "AppIcon.icns");
+const appVersion = require(path.join(root, "package.json")).version;
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -105,8 +106,8 @@ async function main() {
     overwrite: true,
     icon: iconFile,
     appBundleId: "com.guoyuansen.hengce",
-    appVersion: "0.1.3",
-    buildVersion: "4",
+    appVersion,
+    buildVersion: "5",
     appCategoryType: "public.app-category.finance",
     asar: true,
     prune: false

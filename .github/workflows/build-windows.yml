@@ -1,0 +1,87 @@
+name: Build Windows
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-2022
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install pnpm
+        run: npm install --global pnpm@11.9.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Build Windows packages
+        run: pnpm run build:win
+
+      - name: Smoke-test packaged application
+        shell: pwsh
+        run: |
+          $capture = Join-Path $PWD "dist\HengCe-Windows-x64-Smoke.png"
+          $env:HENGCE_CAPTURE_PATH = $capture
+          $executable = "build\windows\package\HengCe-win32-x64\HengCe.exe"
+          $process = Start-Process -FilePath $executable -PassThru
+          if (-not $process.WaitForExit(45000)) {
+            $process.Kill()
+            throw "Packaged application did not finish its smoke test"
+          }
+          if ($process.ExitCode -ne 0) {
+            throw "Packaged application exited with code $($process.ExitCode)"
+          }
+          if (-not (Test-Path $capture)) {
+            throw "Packaged application did not create a smoke-test screenshot"
+          }
+
+      - name: Verify release files
+        shell: pwsh
+        run: |
+          $files = @(
+            "dist\HengCe-Windows-x64-Setup.exe",
+            "dist\HengCe-Windows-x64-Setup.exe.sha256",
+            "dist\HengCe-Windows-x64-Portable.zip",
+            "dist\HengCe-Windows-x64-Portable.zip.sha256"
+          )
+          foreach ($file in $files) {
+            if (-not (Test-Path $file)) {
+              throw "Missing release file: $file"
+            }
+          }
+          if ((Get-Item $files[0]).Length -lt 50000000) {
+            throw "Installer is unexpectedly small"
+          }
+          if ((Get-Item $files[2]).Length -lt 50000000) {
+            throw "Portable archive is unexpectedly small"
+          }
+          Get-FileHash $files[0] -Algorithm SHA256
+          Get-FileHash $files[2] -Algorithm SHA256
+
+      - name: Upload Windows release files
+        uses: actions/upload-artifact@v4
+        with:
+          name: HengCe-Windows-x64
+          path: |
+            dist/HengCe-Windows-x64-Setup.exe
+            dist/HengCe-Windows-x64-Setup.exe.sha256
+            dist/HengCe-Windows-x64-Portable.zip
+            dist/HengCe-Windows-x64-Portable.zip.sha256
+            dist/HengCe-Windows-x64-Smoke.png
+          if-no-files-found: error
+          retention-days: 7

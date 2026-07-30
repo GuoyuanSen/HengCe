@@ -243,13 +243,19 @@ async function fetchIndices() {
 }
 
 function createWindow() {
+  const isMac = process.platform === "darwin";
   const window = new BrowserWindow({
     width: 1360,
     height: 860,
     minWidth: 1080,
     minHeight: 680,
     title: "衡策",
-    titleBarStyle: "hiddenInset",
+    ...(isMac
+      ? { titleBarStyle: "hiddenInset" }
+      : {
+          autoHideMenuBar: true,
+          icon: path.join(__dirname, "..", "Resources", "AppIcon.png")
+        }),
     backgroundColor: "#f4f6f8",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -258,6 +264,7 @@ function createWindow() {
       sandbox: true
     }
   });
+  if (!isMac) window.setMenuBarVisibility(false);
 
   window.webContents.on("will-navigate", (event, url) => {
     if (!url.startsWith("file://")) event.preventDefault();

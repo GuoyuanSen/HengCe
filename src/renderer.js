@@ -55,6 +55,11 @@ if (!window.hengce) {
   };
 }
 
+document.documentElement.dataset.platform =
+  window.hengce.platform ||
+  new URLSearchParams(window.location.search).get("platform") ||
+  "browser";
+
 const { analyze, runBacktest } = window.HengCeEngine;
 
 const DEFAULT_SETTINGS = {

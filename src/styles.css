@@ -82,6 +82,18 @@ select:focus-visible {
   background: var(--nav);
 }
 
+html[data-platform="win32"] .titlebar {
+  display: none;
+}
+
+html[data-platform="win32"] .sidebar {
+  padding-top: 8px;
+}
+
+html[data-platform="win32"] .toolbar {
+  -webkit-app-region: no-drag;
+}
+
 .brand {
   display: flex;
   align-items: center;

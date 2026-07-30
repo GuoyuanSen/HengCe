@@ -7,6 +7,8 @@ const root = path.resolve(__dirname, "..");
 const html = fs.readFileSync(path.join(root, "src", "index.html"), "utf8");
 const renderer = fs.readFileSync(path.join(root, "src", "renderer.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "src", "styles.css"), "utf8");
+const preload = fs.readFileSync(path.join(root, "electron", "preload.js"), "utf8");
+const main = fs.readFileSync(path.join(root, "electron", "main.js"), "utf8");
 
 test("stock code input stays outside the draggable titlebar", () => {
   assert.match(
@@ -49,4 +51,15 @@ test("charts wait for visible bounds and observe container resizing", () => {
   assert.match(renderer, /if \(width < 1 \|\| height < 1\) return null/);
   assert.match(renderer, /function schedulePriceChart/);
   assert.match(renderer, /new ResizeObserver/);
+});
+
+test("Windows uses its native titlebar and compact sidebar spacing", () => {
+  assert.match(preload, /platform:\s*process\.platform/);
+  assert.match(renderer, /document\.documentElement\.dataset\.platform/);
+  assert.match(main, /const isMac = process\.platform === "darwin"/);
+  assert.match(main, /autoHideMenuBar:\s*true/);
+  assert.match(main, /window\.setMenuBarVisibility\(false\)/);
+  assert.match(styles, /html\[data-platform="win32"\] \.titlebar[\s\S]*?display:\s*none/);
+  assert.match(styles, /html\[data-platform="win32"\] \.sidebar[\s\S]*?padding-top:\s*8px/);
+  assert.match(styles, /html\[data-platform="win32"\] \.toolbar[\s\S]*?-webkit-app-region:\s*no-drag/);
 });
