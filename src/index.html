@@ -31,6 +31,10 @@
             <i data-lucide="flame"></i>
             <span>每日热点</span>
           </button>
+          <button class="nav-item" data-view="recommendations">
+            <i data-lucide="list-filter"></i>
+            <span>A股优选</span>
+          </button>
           <button class="nav-item" data-view="backtest">
             <i data-lucide="flask-conical"></i>
             <span>策略回测</span>
@@ -233,6 +237,54 @@
                 </table>
               </div>
               <p id="hotspots-note" class="hotspots-note"></p>
+            </section>
+          </div>
+        </section>
+
+        <section id="recommendations-view" class="view">
+          <div class="page-heading">
+            <div>
+              <h1>A股优选</h1>
+              <p>从成交活跃样本中筛选趋势、动量与量能结构占优的观察标的</p>
+            </div>
+            <button id="refresh-recommendations" class="icon-button" title="刷新优选榜">
+              <i data-lucide="refresh-cw"></i>
+            </button>
+          </div>
+
+          <div id="recommendations-error" class="error-banner hidden"></div>
+          <div id="recommendations-loading" class="loading-state">
+            <span class="spinner"></span>
+            <p>正在扫描活跃股票并计算量化因子</p>
+          </div>
+
+          <div id="recommendations-content" class="hidden">
+            <section id="recommendations-summary" class="hotspots-summary"></section>
+            <section class="table-section recommendation-table-section">
+              <div class="section-heading">
+                <div>
+                  <h2>今日观察池</h2>
+                  <span>综合评分不代表未来涨幅</span>
+                </div>
+              </div>
+              <div class="table-scroll">
+                <table class="recommendation-table">
+                  <thead>
+                    <tr>
+                      <th>排名</th>
+                      <th>股票</th>
+                      <th>综合评分</th>
+                      <th>现价 / 涨跌</th>
+                      <th>20日动量</th>
+                      <th>风险</th>
+                      <th>入选依据</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="recommendations-table-body"></tbody>
+                </table>
+              </div>
+              <p id="recommendations-note" class="hotspots-note"></p>
             </section>
           </div>
         </section>

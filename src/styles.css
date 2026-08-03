@@ -867,6 +867,76 @@ h2 {
   line-height: 1.55;
 }
 
+#recommendations-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.recommendation-table-section {
+  min-width: 0;
+  width: 100%;
+  margin-top: 0;
+}
+
+.recommendation-table {
+  min-width: 1040px;
+}
+
+.recommendation-table th:first-child,
+.recommendation-table td:first-child {
+  width: 54px;
+  text-align: center;
+}
+
+.recommendation-table th:nth-child(2),
+.recommendation-table td:nth-child(2),
+.recommendation-table th:nth-child(7),
+.recommendation-table td:nth-child(7) {
+  text-align: left;
+}
+
+.recommendation-table td:nth-child(4) small {
+  display: block;
+  margin-top: 3px;
+}
+
+.recommendation-reasons {
+  max-width: 330px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.risk-pill {
+  display: inline-flex;
+  align-items: center;
+  min-width: 42px;
+  justify-content: center;
+  padding: 3px 7px;
+  border-radius: 10px;
+  font-size: 10px;
+}
+
+.risk-low {
+  color: var(--green);
+  background: var(--green-soft);
+}
+
+.risk-medium {
+  color: var(--amber);
+  background: var(--amber-soft);
+}
+
+.risk-high {
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.recommendation-table .secondary-button {
+  min-width: 72px;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+
 .chart-section,
 .table-section {
   margin-top: 20px;

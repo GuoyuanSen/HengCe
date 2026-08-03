@@ -158,6 +158,37 @@ if (!window.hengce && isBrowserPreview) {
         (left, right) => right.netFlow3Day - left.netFlow3Day
       )
     }),
+    recommendations: async () => ({
+      asOf: new Date().toISOString(),
+      summary: {
+        candidatePool: 86,
+        scannedCount: 30,
+        qualifiedCount: 8,
+        leadingStock: "泛微网络"
+      },
+      recommendations: [
+        {
+          code: "603039",
+          name: "泛微网络",
+          score: 82,
+          price: last.close,
+          changePercent: 3.31,
+          momentum20: 0.094,
+          risk: "中等",
+          reasons: ["价格位于20日均线上方", "MACD动能转正", "近5日量能高于20日均量"]
+        },
+        {
+          code: "002475",
+          name: "立讯精密",
+          score: 76,
+          price: 43.18,
+          changePercent: 2.84,
+          momentum20: 0.071,
+          risk: "较低",
+          reasons: ["短期均线多头排列", "价格站上60日均线", "RSI处于健康强势区"]
+        }
+      ]
+    }),
     openExternal: async (url) => window.open(url, "_blank")
   };
 }
@@ -172,6 +203,7 @@ if (!window.hengce) {
     indices: unavailable,
     valuation: unavailable,
     hotspots: unavailable,
+    recommendations: unavailable,
     openExternal: unavailable
   };
 }
@@ -205,6 +237,9 @@ const state = {
   hotspotsLoading: false,
   hotspotsError: "",
   hotspotMode: "composite",
+  recommendations: null,
+  recommendationsLoading: false,
+  recommendationsError: "",
   analysis: null,
   chartRange: 120,
   strategy: "movingAverage",
@@ -644,6 +679,104 @@ async function loadHotspots({ force = false } = {}) {
   } finally {
     state.hotspotsLoading = false;
     renderHotspots();
+  }
+}
+
+function renderRecommendations() {
+  const loading = $("#recommendations-loading");
+  const content = $("#recommendations-content");
+  const error = $("#recommendations-error");
+  const refreshButton = $("#refresh-recommendations");
+  loading.classList.toggle("hidden", !state.recommendationsLoading);
+  content.classList.toggle(
+    "hidden",
+    state.recommendationsLoading || !state.recommendations
+  );
+  error.textContent = state.recommendationsError;
+  error.classList.toggle("hidden", !state.recommendationsError);
+  refreshButton.disabled = state.recommendationsLoading;
+  refreshButton.classList.toggle("rotating", state.recommendationsLoading);
+  if (!state.recommendations || state.recommendationsLoading) return;
+
+  const snapshot = state.recommendations;
+  const summary = snapshot.summary;
+  $("#recommendations-summary").innerHTML = [
+    hotspotStat("当前领先", summary.leadingStock, "综合因子排名第一"),
+    hotspotStat("初筛样本", `${summary.candidatePool} 只`, "成交活跃且通过基础风控"),
+    hotspotStat("完成计算", `${summary.scannedCount} 只`, "读取至少60个交易日"),
+    hotspotStat("达到门槛", `${summary.qualifiedCount} 只`, "综合评分不低于55")
+  ].join("");
+  const rows = snapshot.recommendations || [];
+  $("#recommendations-table-body").innerHTML = rows.length
+    ? rows
+        .map((item, index) => {
+          const scoreClass = item.score >= 75 ? "high" : "";
+          return `
+            <tr>
+              <td>${index + 1}</td>
+              <td>
+                <div class="stock-cell">
+                  <strong>${escapeHTML(item.name)}</strong>
+                  <span>${escapeHTML(item.code)}</span>
+                </div>
+              </td>
+              <td>
+                <div class="hotspot-score ${scoreClass}">
+                  <strong>${number(item.score, 0)}</strong>
+                  <span class="hotspot-score-track">
+                    <span style="width:${Math.max(0, Math.min(100, item.score))}%"></span>
+                  </span>
+                </div>
+              </td>
+              <td>
+                <strong>${number(item.price)}</strong>
+                <small class="${directionClass(item.changePercent)}">${percent(item.changePercent)}</small>
+              </td>
+              <td class="${directionClass(item.momentum20)}">${percent(item.momentum20, true)}</td>
+              <td><span class="risk-pill risk-${item.risk === "较高" ? "high" : item.risk === "中等" ? "medium" : "low"}">${escapeHTML(item.risk)}</span></td>
+              <td class="recommendation-reasons">${(item.reasons || []).map(escapeHTML).join(" · ") || "量价结构达到观察门槛"}</td>
+              <td><button class="secondary-button analyze-recommendation" data-code="${escapeHTML(item.code)}">查看分析</button></td>
+            </tr>
+          `;
+        })
+        .join("")
+    : '<tr><td colspan="8" class="muted">当前没有达到观察门槛的标的</td></tr>';
+  $$(".analyze-recommendation").forEach((button) =>
+    button.addEventListener("click", () => {
+      const code = button.dataset.code;
+      $("#stock-code").value = code;
+      switchView("dashboard");
+      loadMarketData(code);
+    })
+  );
+  const asOf = new Date(snapshot.asOf);
+  const timestamp = Number.isNaN(asOf.getTime())
+    ? "--"
+    : asOf.toLocaleString("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+  $("#recommendations-note").textContent =
+    `数据时间 ${timestamp}。榜单仅扫描成交活跃样本，并排除 ST、退市及极端波动标的；结果是量化观察池，不构成投资建议。`;
+}
+
+async function loadRecommendations({ force = false } = {}) {
+  if (state.recommendations && !force) {
+    renderRecommendations();
+    return;
+  }
+  state.recommendationsLoading = true;
+  state.recommendationsError = "";
+  renderRecommendations();
+  try {
+    state.recommendations = await window.hengce.recommendations();
+  } catch (error) {
+    state.recommendationsError = friendlyMarketError(error);
+  } finally {
+    state.recommendationsLoading = false;
+    renderRecommendations();
   }
 }
 
@@ -1123,6 +1256,7 @@ function switchView(view) {
   );
   if (view === "backtest") requestAnimationFrame(renderBacktest);
   if (view === "hotspots") loadHotspots();
+  if (view === "recommendations") loadRecommendations();
   if (view === "holdings") updateHoldingQuotes();
   if (view === "dashboard") schedulePriceChart();
 }
@@ -1135,6 +1269,9 @@ function bindEvents() {
   $("#refresh-button").addEventListener("click", () => loadMarketData(state.code));
   $("#refresh-hotspots").addEventListener("click", () =>
     loadHotspots({ force: true })
+  );
+  $("#refresh-recommendations").addEventListener("click", () =>
+    loadRecommendations({ force: true })
   );
   $$("[data-hotspot-mode]").forEach((button) =>
     button.addEventListener("click", () => {

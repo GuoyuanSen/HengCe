@@ -67,6 +67,17 @@ test("daily hotspots are a standalone lazy-loaded view", () => {
   assert.match(renderer, /不等同于真实机构持仓变化/);
 });
 
+test("A-share recommendations are a standalone lazy-loaded view", () => {
+  assert.match(preload, /recommendations:\s*\(\)/);
+  assert.match(main, /ipcMain\.handle\("market:recommendations"/);
+  assert.match(html, /data-view="recommendations"/);
+  assert.match(html, /id="recommendations-view"/);
+  assert.match(html, /A股优选/);
+  assert.match(renderer, /if \(view === "recommendations"\) loadRecommendations\(\)/);
+  assert.match(renderer, /window\.hengce\.recommendations\(\)/);
+  assert.match(renderer, /不构成投资建议/);
+});
+
 test("charts wait for visible bounds and observe container resizing", () => {
   assert.match(renderer, /if \(width < 1 \|\| height < 1\) return null/);
   assert.match(renderer, /function schedulePriceChart/);

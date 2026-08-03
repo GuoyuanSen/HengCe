@@ -18,6 +18,11 @@ const {
   parseValuationSnapshot
 } = require("./valuation.js");
 const { buildHotspotSnapshot } = require("./hotspots.js");
+const { analyze } = require("../src/engine.js");
+const {
+  buildRecommendationSnapshot,
+  parseCandidatePayload
+} = require("./recommendations.js");
 
 const APP_ID = "com.guoyuansen.hengce";
 const FRIENDLY_MARKET_ERROR = "行情服务暂时无响应，请检查网络后重试。";
@@ -416,6 +421,66 @@ async function fetchHotspots() {
   });
 }
 
+async function mapWithConcurrency(items, limit, mapper) {
+  const results = Array(items.length);
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      try {
+        results[index] = { status: "fulfilled", value: await mapper(items[index]) };
+      } catch (reason) {
+        results[index] = { status: "rejected", reason };
+      }
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => worker())
+  );
+  return results;
+}
+
+async function fetchRecommendations() {
+  const params = new URLSearchParams({
+    pn: "1",
+    pz: "100",
+    po: "1",
+    np: "1",
+    fltt: "2",
+    invt: "2",
+    fid: "f6",
+    fs: "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23",
+    fields: "f2,f3,f6,f8,f9,f12,f14,f20,f21,f23"
+  });
+  const fetchPool = async (baseUrl) => {
+    const payload = await requestJSON(`${baseUrl}?${params}`);
+    if (!Array.isArray(payload?.data?.diff) || !payload.data.diff.length) {
+      throw new Error("A股候选池数据为空");
+    }
+    return payload;
+  };
+  const payload = await firstAvailable("A股候选池", [
+    () => fetchPool("https://push2delay.eastmoney.com/api/qt/clist/get"),
+    () => fetchPool("https://push2.eastmoney.com/api/qt/clist/get")
+  ]);
+  const pool = parseCandidatePayload(payload);
+  if (!pool.length) throw new Error(FRIENDLY_MARKET_ERROR);
+  const selected = pool.slice(0, 30);
+  const settled = await mapWithConcurrency(selected, 6, async (candidate) => {
+    const bars = await fetchKLines(candidate.code, 130);
+    return { candidate, model: analyze(bars) };
+  });
+  const candidates = settled
+    .filter((item) => item.status === "fulfilled")
+    .map((item) => item.value);
+  if (!candidates.length) throw new Error(FRIENDLY_MARKET_ERROR);
+  return buildRecommendationSnapshot(candidates, {
+    asOf: new Date().toISOString(),
+    candidatePool: pool.length
+  });
+}
+
 function createWindow() {
   const isMac = process.platform === "darwin";
   const window = new BrowserWindow({
@@ -471,6 +536,7 @@ app.whenReady().then(() => {
   ipcMain.handle("market:indices", () => fetchIndices());
   ipcMain.handle("market:valuation", (_, code) => fetchValuation(code));
   ipcMain.handle("market:hotspots", () => fetchHotspots());
+  ipcMain.handle("market:recommendations", () => fetchRecommendations());
   ipcMain.handle("system:open-external", (_, url) => {
     if (/^https:\/\//.test(url)) return shell.openExternal(url);
     return false;
