@@ -877,8 +877,51 @@ h2 {
   margin-top: 0;
 }
 
+.recommendation-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr)) minmax(110px, 0.7fr);
+  gap: 12px;
+  margin-bottom: 22px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.recommendation-filters label,
+.filter-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.recommendation-filters label > span,
+.filter-result span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.recommendation-filters select {
+  width: 100%;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  color: var(--text);
+  background: #fff;
+}
+
+.filter-result {
+  justify-content: center;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+
+.filter-result strong {
+  font-size: 18px;
+}
+
 .recommendation-table {
-  min-width: 1040px;
+  min-width: 1180px;
 }
 
 .recommendation-table th:first-child,
@@ -904,6 +947,33 @@ h2 {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.55;
+}
+
+.factor-breakdown {
+  display: grid;
+  grid-template-columns: repeat(2, 48px);
+  gap: 4px;
+}
+
+.factor-breakdown span {
+  padding: 3px 5px;
+  border-radius: 3px;
+  color: var(--muted);
+  background: #f0f2f5;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.validation-cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 128px;
+  gap: 3px;
+}
+
+.validation-cell small {
+  color: var(--muted);
+  font-size: 10px;
 }
 
 .risk-pill {

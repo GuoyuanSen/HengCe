@@ -260,6 +260,44 @@
 
           <div id="recommendations-content" class="hidden">
             <section id="recommendations-summary" class="hotspots-summary"></section>
+            <section class="recommendation-filters" aria-label="优选筛选条件">
+              <label>
+                <span>市场</span>
+                <select id="recommendation-market">
+                  <option value="all">全部市场</option>
+                  <option value="main">沪深主板</option>
+                  <option value="growth">创业板</option>
+                  <option value="star">科创板</option>
+                </select>
+              </label>
+              <label>
+                <span>行业</span>
+                <select id="recommendation-industry">
+                  <option value="all">全部行业</option>
+                </select>
+              </label>
+              <label>
+                <span>风险</span>
+                <select id="recommendation-risk">
+                  <option value="all">全部风险</option>
+                  <option value="较低">较低</option>
+                  <option value="中等">中等</option>
+                  <option value="较高">较高</option>
+                </select>
+              </label>
+              <label>
+                <span>最低评分</span>
+                <select id="recommendation-min-score">
+                  <option value="55">55 分</option>
+                  <option value="65">65 分</option>
+                  <option value="75">75 分</option>
+                </select>
+              </label>
+              <div class="filter-result">
+                <span>当前结果</span>
+                <strong id="recommendation-filter-count">0 只</strong>
+              </div>
+            </section>
             <section class="table-section recommendation-table-section">
               <div class="section-heading">
                 <div>
@@ -274,8 +312,8 @@
                       <th>排名</th>
                       <th>股票</th>
                       <th>综合评分</th>
-                      <th>现价 / 涨跌</th>
-                      <th>20日动量</th>
+                      <th>因子拆解</th>
+                      <th>历史验证</th>
                       <th>风险</th>
                       <th>入选依据</th>
                       <th></th>

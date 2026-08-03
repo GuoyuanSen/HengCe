@@ -173,8 +173,15 @@ if (!window.hengce && isBrowserPreview) {
           score: 82,
           price: last.close,
           changePercent: 3.31,
+          industry: "软件开发",
           momentum20: 0.094,
           risk: "中等",
+          factors: { trend: 88, momentum: 82, volume: 76, liquidity: 71, risk: 64, valuation: 59 },
+          validation: {
+            signalCount: 8,
+            fiveDay: { averageReturn: 0.031, hitRate: 0.625, sampleCount: 8 },
+            twentyDay: { averageReturn: 0.084, hitRate: 0.75, sampleCount: 8 }
+          },
           reasons: ["价格位于20日均线上方", "MACD动能转正", "近5日量能高于20日均量"]
         },
         {
@@ -183,8 +190,15 @@ if (!window.hengce && isBrowserPreview) {
           score: 76,
           price: 43.18,
           changePercent: 2.84,
+          industry: "消费电子",
           momentum20: 0.071,
           risk: "较低",
+          factors: { trend: 84, momentum: 74, volume: 68, liquidity: 88, risk: 81, valuation: 63 },
+          validation: {
+            signalCount: 7,
+            fiveDay: { averageReturn: 0.018, hitRate: 0.571, sampleCount: 7 },
+            twentyDay: { averageReturn: 0.046, hitRate: 0.714, sampleCount: 7 }
+          },
           reasons: ["短期均线多头排列", "价格站上60日均线", "RSI处于健康强势区"]
         }
       ]
@@ -240,6 +254,12 @@ const state = {
   recommendations: null,
   recommendationsLoading: false,
   recommendationsError: "",
+  recommendationFilters: {
+    market: "all",
+    industry: "all",
+    risk: "all",
+    minScore: 55
+  },
   analysis: null,
   chartRange: 120,
   strategy: "movingAverage",
@@ -706,7 +726,37 @@ function renderRecommendations() {
     hotspotStat("完成计算", `${summary.scannedCount} 只`, "读取至少60个交易日"),
     hotspotStat("达到门槛", `${summary.qualifiedCount} 只`, "综合评分不低于55")
   ].join("");
-  const rows = snapshot.recommendations || [];
+  const allRows = snapshot.recommendations || [];
+  const industries = [...new Set(allRows.map((item) => item.industry).filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right, "zh-CN"));
+  const industrySelect = $("#recommendation-industry");
+  const currentIndustry = state.recommendationFilters.industry;
+  industrySelect.innerHTML = [
+    '<option value="all">全部行业</option>',
+    ...industries.map(
+      (industry) => `<option value="${escapeHTML(industry)}">${escapeHTML(industry)}</option>`
+    )
+  ].join("");
+  industrySelect.value = industries.includes(currentIndustry) ? currentIndustry : "all";
+  state.recommendationFilters.industry = industrySelect.value;
+  const marketMatches = (code) => {
+    if (state.recommendationFilters.market === "growth") return code.startsWith("30");
+    if (state.recommendationFilters.market === "star") return code.startsWith("68");
+    if (state.recommendationFilters.market === "main") {
+      return code.startsWith("00") || code.startsWith("60");
+    }
+    return true;
+  };
+  const rows = allRows.filter(
+    (item) =>
+      marketMatches(item.code) &&
+      (state.recommendationFilters.industry === "all" ||
+        item.industry === state.recommendationFilters.industry) &&
+      (state.recommendationFilters.risk === "all" ||
+        item.risk === state.recommendationFilters.risk) &&
+      item.score >= state.recommendationFilters.minScore
+  );
+  $("#recommendation-filter-count").textContent = `${rows.length} 只`;
   $("#recommendations-table-body").innerHTML = rows.length
     ? rows
         .map((item, index) => {
@@ -717,7 +767,7 @@ function renderRecommendations() {
               <td>
                 <div class="stock-cell">
                   <strong>${escapeHTML(item.name)}</strong>
-                  <span>${escapeHTML(item.code)}</span>
+                  <span>${escapeHTML(item.code)} · ${escapeHTML(item.industry || "未分类")}</span>
                 </div>
               </td>
               <td>
@@ -729,10 +779,19 @@ function renderRecommendations() {
                 </div>
               </td>
               <td>
-                <strong>${number(item.price)}</strong>
-                <small class="${directionClass(item.changePercent)}">${percent(item.changePercent)}</small>
+                <div class="factor-breakdown">
+                  <span title="趋势">趋 ${number(item.factors?.trend, 0)}</span>
+                  <span title="动量">动 ${number(item.factors?.momentum, 0)}</span>
+                  <span title="量能">量 ${number(item.factors?.volume, 0)}</span>
+                  <span title="风险控制">风 ${number(item.factors?.risk, 0)}</span>
+                </div>
               </td>
-              <td class="${directionClass(item.momentum20)}">${percent(item.momentum20, true)}</td>
+              <td>
+                <div class="validation-cell">
+                  <strong>${item.validation?.fiveDay?.hitRate == null ? "样本不足" : `5日胜率 ${percent(item.validation.fiveDay.hitRate, true)}`}</strong>
+                  <small>${item.validation?.twentyDay?.averageReturn == null ? "等待更多历史信号" : `20日均值 ${percent(item.validation.twentyDay.averageReturn, true)} · ${item.validation.twentyDay.sampleCount}次`}</small>
+                </div>
+              </td>
               <td><span class="risk-pill risk-${item.risk === "较高" ? "high" : item.risk === "中等" ? "medium" : "low"}">${escapeHTML(item.risk)}</span></td>
               <td class="recommendation-reasons">${(item.reasons || []).map(escapeHTML).join(" · ") || "量价结构达到观察门槛"}</td>
               <td><button class="secondary-button analyze-recommendation" data-code="${escapeHTML(item.code)}">查看分析</button></td>
@@ -740,7 +799,7 @@ function renderRecommendations() {
           `;
         })
         .join("")
-    : '<tr><td colspan="8" class="muted">当前没有达到观察门槛的标的</td></tr>';
+    : '<tr><td colspan="8" class="muted">当前筛选条件下没有可用标的</td></tr>';
   $$(".analyze-recommendation").forEach((button) =>
     button.addEventListener("click", () => {
       const code = button.dataset.code;
@@ -1272,6 +1331,18 @@ function bindEvents() {
   );
   $("#refresh-recommendations").addEventListener("click", () =>
     loadRecommendations({ force: true })
+  );
+  [
+    ["#recommendation-market", "market"],
+    ["#recommendation-industry", "industry"],
+    ["#recommendation-risk", "risk"],
+    ["#recommendation-min-score", "minScore"]
+  ].forEach(([selector, key]) =>
+    $(selector).addEventListener("change", (event) => {
+      state.recommendationFilters[key] =
+        key === "minScore" ? Number(event.target.value) : event.target.value;
+      renderRecommendations();
+    })
   );
   $$("[data-hotspot-mode]").forEach((button) =>
     button.addEventListener("click", () => {

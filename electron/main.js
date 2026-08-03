@@ -21,7 +21,8 @@ const { buildHotspotSnapshot } = require("./hotspots.js");
 const { analyze } = require("../src/engine.js");
 const {
   buildRecommendationSnapshot,
-  parseCandidatePayload
+  parseCandidatePayload,
+  validateHistoricalSignals
 } = require("./recommendations.js");
 
 const APP_ID = "com.guoyuansen.hengce";
@@ -451,7 +452,7 @@ async function fetchRecommendations() {
     invt: "2",
     fid: "f6",
     fs: "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23",
-    fields: "f2,f3,f6,f8,f9,f12,f14,f20,f21,f23"
+    fields: "f2,f3,f6,f8,f9,f12,f14,f20,f21,f23,f100"
   });
   const fetchPool = async (baseUrl) => {
     const payload = await requestJSON(`${baseUrl}?${params}`);
@@ -469,7 +470,11 @@ async function fetchRecommendations() {
   const selected = pool.slice(0, 30);
   const settled = await mapWithConcurrency(selected, 6, async (candidate) => {
     const bars = await fetchKLines(candidate.code, 130);
-    return { candidate, model: analyze(bars) };
+    return {
+      candidate,
+      model: analyze(bars),
+      validation: validateHistoricalSignals(bars, analyze)
+    };
   });
   const candidates = settled
     .filter((item) => item.status === "fulfilled")

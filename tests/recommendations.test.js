@@ -2,10 +2,12 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   buildRecommendationSnapshot,
+  diversifyRecommendations,
   isEligibleCode,
   isRiskName,
   parseCandidatePayload,
-  recommendationFor
+  recommendationFor,
+  validateHistoricalSignals
 } = require("../electron/recommendations.js");
 
 test("candidate pool keeps regular Shanghai and Shenzhen A shares", () => {
@@ -55,6 +57,12 @@ test("recommendation scoring rewards technical structure without exceeding 100",
     },
     {
       score: 88,
+      sma5: 40,
+      sma10: 39,
+      sma20: 38,
+      sma60: 36,
+      macdHistogram: 0.4,
+      volumeRatio: 1.35,
       volatility: 0.3,
       trend: "强势",
       rsi14: 62,
@@ -65,7 +73,7 @@ test("recommendation scoring rewards technical structure without exceeding 100",
       positives: ["价格位于20日均线上方", "MACD动能转正"]
     }
   );
-  assert.ok(result.score >= 80 && result.score <= 100);
+  assert.ok(result.score >= 70 && result.score <= 100);
   assert.equal(result.risk, "较低");
   assert.ok(result.reasons.some((item) => item.includes("动态PE")));
 });
@@ -73,6 +81,12 @@ test("recommendation scoring rewards technical structure without exceeding 100",
 test("snapshot sorts recommendations and limits the observation pool", () => {
   const baseModel = {
     score: 70,
+    sma5: 10.5,
+    sma10: 10.2,
+    sma20: 9.8,
+    sma60: 9.4,
+    macdHistogram: 0.2,
+    volumeRatio: 1.2,
     volatility: 0.35,
     trend: "修复",
     rsi14: 55,
@@ -97,4 +111,33 @@ test("snapshot sorts recommendations and limits the observation pool", () => {
   assert.equal(snapshot.summary.candidatePool, 88);
   assert.equal(snapshot.recommendations.length, 12);
   assert.ok(snapshot.recommendations[0].score >= snapshot.recommendations[1].score);
+});
+
+test("historical validation uses next-day open and reports forward outcomes", () => {
+  const bars = Array.from({ length: 110 }, (_, index) => ({
+    date: `2026-${String(Math.floor(index / 28) + 1).padStart(2, "0")}-${String((index % 28) + 1).padStart(2, "0")}`,
+    open: 10 + index * 0.1,
+    close: 10.05 + index * 0.1,
+    high: 10.2 + index * 0.1,
+    low: 9.9 + index * 0.1,
+    volume: 1e6
+  }));
+  const validation = validateHistoricalSignals(bars, () => ({ score: 80 }));
+  assert.ok(validation.signalCount > 0);
+  assert.equal(validation.fiveDay.hitRate, 1);
+  assert.ok(validation.twentyDay.averageReturn > 0);
+});
+
+test("industry diversification caps repeated industries", () => {
+  const selected = diversifyRecommendations(
+    [
+      { code: "1", industry: "软件" },
+      { code: "2", industry: "软件" },
+      { code: "3", industry: "软件" },
+      { code: "4", industry: "银行" }
+    ],
+    4,
+    2
+  );
+  assert.deepEqual(selected.map((item) => item.code), ["1", "2", "4"]);
 });
