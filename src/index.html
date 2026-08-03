@@ -35,6 +35,10 @@
             <i data-lucide="list-filter"></i>
             <span>A股优选</span>
           </button>
+          <button class="nav-item" data-view="overnight">
+            <i data-lucide="moon-star"></i>
+            <span>尾盘观察</span>
+          </button>
           <button class="nav-item" data-view="watchlist">
             <i data-lucide="bell-ring"></i>
             <span>观察提醒</span>
@@ -330,6 +334,85 @@
                 </table>
               </div>
               <p id="recommendations-note" class="hotspots-note"></p>
+            </section>
+          </div>
+        </section>
+
+        <section id="overnight-view" class="view">
+          <div class="page-heading">
+            <div>
+              <h1>尾盘观察</h1>
+              <p>14:30–14:40 严格筛选，只持有一个隔夜周期</p>
+            </div>
+            <button id="refresh-overnight" class="icon-button" title="刷新尾盘扫描">
+              <i data-lucide="refresh-cw"></i>
+            </button>
+          </div>
+
+          <section class="overnight-clock">
+            <div>
+              <span id="overnight-window-label" class="window-status waiting">等待扫描</span>
+              <strong id="overnight-clock-time">--:--:--</strong>
+              <small id="overnight-window-detail">14:30 开始扫描，14:40 锁定最终名单</small>
+            </div>
+            <div class="scan-timeline" aria-label="尾盘扫描时间轴">
+              <span>14:30</span><i></i><span>动态观察</span><i></i><span>14:40 锁定</span>
+            </div>
+          </section>
+
+          <div id="overnight-error" class="error-banner hidden"></div>
+          <div id="overnight-loading" class="loading-state hidden">
+            <span class="spinner"></span>
+            <p>正在核对实时行情、近20日涨停与分时均价</p>
+          </div>
+
+          <div id="overnight-content">
+            <section id="overnight-summary" class="hotspots-summary"></section>
+            <section class="overnight-rules" aria-label="尾盘筛选规则">
+              <span>涨幅 3%–5%</span>
+              <span>近20日有涨停</span>
+              <span>量比 ≥ 1</span>
+              <span>流通市值 ≤ 300亿</span>
+              <span>换手率 5%–10%</span>
+              <span>至少95%分时在均价线上</span>
+            </section>
+            <section class="table-section overnight-table-section">
+              <div class="section-heading">
+                <div>
+                  <h2>最终观察名单</h2>
+                  <span>没有符合条件的股票时保持空仓，不降低标准凑数</span>
+                </div>
+              </div>
+              <div class="table-scroll">
+                <table class="overnight-table">
+                  <thead>
+                    <tr>
+                      <th>股票</th>
+                      <th>尾盘评分</th>
+                      <th>涨幅 / 量比</th>
+                      <th>换手 / 流通市值</th>
+                      <th>最近涨停</th>
+                      <th>均价线上方</th>
+                      <th>隔夜历史代理</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="overnight-table-body"></tbody>
+                </table>
+              </div>
+              <div id="overnight-empty" class="empty-state hidden">
+                <i data-lucide="moon"></i>
+                <strong>今日暂无符合条件的股票</strong>
+                <span>空仓也是策略的一部分，不为交易而降低筛选标准</span>
+              </div>
+              <p id="overnight-note" class="hotspots-note"></p>
+            </section>
+            <section class="overnight-discipline">
+              <i data-lucide="alarm-clock-check"></i>
+              <div>
+                <strong>固定隔夜纪律</strong>
+                <p>尾盘形成候选，次日无论高开或低开都按固定时间退出；软件只做研究与提醒，不连接券商，也不会自动下单。</p>
+              </div>
             </section>
           </div>
         </section>

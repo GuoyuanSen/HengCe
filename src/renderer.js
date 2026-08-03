@@ -217,6 +217,56 @@ if (!window.hengce && isBrowserPreview) {
         }
       ]
     }),
+    overnight: async () => ({
+      asOf: new Date().toISOString(),
+      window: {
+        state: "scanning",
+        label: "动态扫描中",
+        canScan: true,
+        locked: false
+      },
+      summary: {
+        poolSize: 5231,
+        prefilteredCount: 7,
+        checkedCount: 7,
+        qualifiedCount: 2
+      },
+      sourceStatus: {
+        candidateSource: "浏览器演示实时行情",
+        intradaySource: "浏览器演示分时均价",
+        loaded: 7,
+        requested: 7,
+        partial: false
+      },
+      picks: [
+        {
+          code: "603039",
+          name: "泛微网络",
+          industry: "软件开发",
+          score: 86,
+          changePercent: 4.12,
+          volumeRatio: 1.46,
+          turnoverRate: 7.18,
+          floatMarketCap: 26.8e9,
+          limitUp: { found: true, date: "2026-07-24", sessionsAgo: 6 },
+          intraday: { passes: true, aboveRatio: 0.98, currentAveragePrice: 40.28 },
+          validation: { sampleCount: 5, averageReturn: 0.012, hitRate: 0.6, worstReturn: -0.027 }
+        },
+        {
+          code: "002475",
+          name: "立讯精密",
+          industry: "消费电子",
+          score: 79,
+          changePercent: 3.64,
+          volumeRatio: 1.22,
+          turnoverRate: 6.43,
+          floatMarketCap: 29.4e9,
+          limitUp: { found: true, date: "2026-07-29", sessionsAgo: 3 },
+          intraday: { passes: true, aboveRatio: 0.96, currentAveragePrice: 42.66 },
+          validation: { sampleCount: 4, averageReturn: 0.007, hitRate: 0.5, worstReturn: -0.031 }
+        }
+      ]
+    }),
     profile: async (code) => ({
       code,
       name: code === "603039" ? "泛微网络" : "演示标的",
@@ -239,6 +289,7 @@ if (!window.hengce) {
     valuation: unavailable,
     hotspots: unavailable,
     recommendations: unavailable,
+    overnight: unavailable,
     profile: unavailable,
     notify: async () => false,
     openExternal: unavailable
@@ -277,6 +328,10 @@ const state = {
   recommendations: null,
   recommendationsLoading: false,
   recommendationsError: "",
+  overnight: null,
+  overnightLoading: false,
+  overnightError: "",
+  overnightStreaks: new Map(),
   recommendationFilters: {
     market: "all",
     industry: "all",
@@ -1044,6 +1099,184 @@ async function loadRecommendations({ force = false } = {}) {
   }
 }
 
+let overnightRefreshTimer = null;
+
+function updateOvernightClock() {
+  const target = $("#overnight-clock-time");
+  if (!target) return;
+  target.textContent = new Date().toLocaleTimeString("zh-CN", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  });
+}
+
+function scheduleOvernightRefresh() {
+  clearTimeout(overnightRefreshTimer);
+  overnightRefreshTimer = null;
+  if (!$("#overnight-view").classList.contains("active")) return;
+  const windowState = state.overnight?.window?.state;
+  if (!["waiting", "scanning"].includes(windowState)) return;
+  overnightRefreshTimer = setTimeout(
+    () => loadOvernight({ force: true }),
+    windowState === "scanning" ? 30000 : 60000
+  );
+}
+
+function localOvernightWindow(now = new Date()) {
+  const weekday = now.getDay();
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  if (weekday === 0 || weekday === 6) return { state: "closed", label: "非交易日", locked: true };
+  if (minutes < 870) return { state: "waiting", label: "14:30 开始扫描", locked: false };
+  if (minutes < 880) return { state: "scanning", label: "动态扫描中", locked: false };
+  if (minutes < 900) return { state: "locked", label: "最终名单已锁定", locked: true };
+  return { state: "closed", label: "今日扫描已结束", locked: true };
+}
+
+function todayKey(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function confirmOvernightPicks(snapshot) {
+  if (isBrowserPreview) return snapshot;
+  const currentCodes = new Set((snapshot.picks || []).map((item) => item.code));
+  for (const code of state.overnightStreaks.keys()) {
+    if (!currentCodes.has(code)) state.overnightStreaks.delete(code);
+  }
+  const picks = (snapshot.picks || [])
+    .map((item) => {
+      const confirmations = (state.overnightStreaks.get(item.code) || 0) + 1;
+      state.overnightStreaks.set(item.code, confirmations);
+      return { ...item, confirmations };
+    })
+    .filter((item) => item.confirmations >= 2);
+  return {
+    ...snapshot,
+    summary: { ...snapshot.summary, rawQualifiedCount: snapshot.picks?.length || 0 },
+    picks
+  };
+}
+
+function renderOvernight() {
+  const loading = $("#overnight-loading");
+  const content = $("#overnight-content");
+  const error = $("#overnight-error");
+  const refreshButton = $("#refresh-overnight");
+  loading.classList.toggle("hidden", !state.overnightLoading);
+  content.classList.toggle("hidden", state.overnightLoading && !state.overnight);
+  error.textContent = state.overnightError;
+  error.classList.toggle("hidden", !state.overnightError);
+  refreshButton.classList.toggle("rotating", state.overnightLoading);
+  const snapshot = state.overnight;
+  if (!snapshot) {
+    refreshButton.disabled = state.overnightLoading;
+    return;
+  }
+  const windowState = snapshot.window || { state: "waiting", label: "等待扫描" };
+  const status = $("#overnight-window-label");
+  status.textContent = windowState.label;
+  status.className = `window-status ${windowState.state}`;
+  $("#overnight-window-detail").textContent =
+    windowState.state === "scanning"
+      ? "每30秒复核一次，14:40 锁定最终名单"
+      : windowState.state === "locked"
+        ? snapshot.summary?.checkedCount
+          ? "名单不会因收盘前最后波动继续变化"
+          : "未在14:30–14:40运行，今日没有可恢复的锁定名单"
+        : windowState.state === "closed"
+          ? "下一个交易日 14:30 再次开放"
+          : "14:30 开始扫描，14:40 锁定最终名单";
+  refreshButton.disabled = state.overnightLoading || windowState.locked;
+  const summary = snapshot.summary || {};
+  const picks = snapshot.picks || [];
+  const sourceStatus = snapshot.sourceStatus || {};
+  $("#overnight-summary").innerHTML = [
+    hotspotStat("扫描状态", windowState.label, windowState.state === "scanning" ? "30秒自动复核" : "严格按时间窗口执行"),
+    hotspotStat("基础候选", `${summary.prefilteredCount || 0} 只`, "涨幅、量比、市值与换手通过"),
+    hotspotStat("完成核对", `${summary.checkedCount || 0} 只`, "近20日涨停与分时均价"),
+    hotspotStat("最终信号", `${picks.length} 只`, picks.length ? "同一行业最多2只" : "没有信号就保持空仓")
+  ].join("");
+  $("#overnight-empty").classList.toggle("hidden", picks.length > 0);
+  const tableScroll = $("#overnight-table-body").closest(".table-scroll");
+  tableScroll.classList.toggle("hidden", picks.length === 0);
+  $("#overnight-table-body").innerHTML = picks
+    .map((item) => {
+      const validation = item.validation || {};
+      return `
+        <tr>
+          <td><div class="stock-cell"><strong>${escapeHTML(item.name)}</strong><span>${escapeHTML(item.code)} · ${escapeHTML(item.industry || "未分类")}</span></div></td>
+          <td><div class="hotspot-score ${item.score >= 80 ? "high" : ""}"><strong>${number(item.score, 0)}</strong><span class="hotspot-score-track"><span style="width:${Math.max(0, Math.min(100, item.score))}%"></span></span></div></td>
+          <td><strong class="up">${percent(item.changePercent)}</strong><small>量比 ${number(item.volumeRatio, 2)}</small></td>
+          <td><strong>${plainPercent(item.turnoverRate)}</strong><small>${compactMoney(item.floatMarketCap)}</small></td>
+          <td><strong>${escapeHTML(item.limitUp?.date || "--")}</strong><small>${item.limitUp?.sessionsAgo ? `${item.limitUp.sessionsAgo} 个交易日前` : "近20日无记录"}</small></td>
+          <td><strong>${plainPercent(item.intraday?.aboveRatio, true)}</strong><small>当前均价 ${number(item.intraday?.currentAveragePrice)}</small></td>
+          <td><div class="validation-cell"><strong>${validation.hitRate == null ? "样本不足" : `胜率 ${plainPercent(validation.hitRate, true)}`}</strong><small>${validation.averageReturn == null ? "等待更多历史结构" : `均值 ${percent(validation.averageReturn, true)} · ${validation.sampleCount}次`}</small></div></td>
+          <td><button class="secondary-button analyze-overnight" data-code="${escapeHTML(item.code)}">分析</button></td>
+        </tr>
+      `;
+    })
+    .join("");
+  $$(".analyze-overnight").forEach((button) =>
+    button.addEventListener("click", () => {
+      $("#stock-code").value = button.dataset.code;
+      switchView("dashboard");
+      loadMarketData(button.dataset.code);
+    })
+  );
+  const asOf = new Date(snapshot.asOf);
+  const timestamp = Number.isNaN(asOf.getTime())
+    ? "--"
+    : asOf.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  $("#overnight-note").textContent =
+    `数据时间 ${timestamp} · 实时：${sourceStatus.candidateSource || "公开行情"} · 分时：${sourceStatus.intradaySource || "公开分时均价"}。历史统计采用当日收盘至次日开盘的日线代理，未复刻历史量比、换手和分时条件，不构成投资建议。`;
+  refreshIcons();
+  scheduleOvernightRefresh();
+}
+
+async function loadOvernight({ force = false } = {}) {
+  const localWindow = localOvernightWindow();
+  const storedSnapshot = readJSON("hengce.overnight.snapshot.v1", null);
+  if (!isBrowserPreview && storedSnapshot?.date !== todayKey()) {
+    state.overnight = null;
+    state.overnightStreaks.clear();
+  }
+  if (!isBrowserPreview && ["locked", "closed"].includes(localWindow.state)) {
+    if (storedSnapshot?.date === todayKey() && storedSnapshot.snapshot) {
+      state.overnight = {
+        ...storedSnapshot.snapshot,
+        window: { ...localWindow, canScan: false }
+      };
+      state.overnightError = "";
+      state.overnightLoading = false;
+      renderOvernight();
+      return;
+    }
+  }
+  if (state.overnight && !force) {
+    renderOvernight();
+    return;
+  }
+  state.overnightLoading = true;
+  state.overnightError = "";
+  renderOvernight();
+  try {
+    const snapshot = confirmOvernightPicks(await window.hengce.overnight());
+    state.overnight = snapshot;
+    if (!isBrowserPreview && snapshot.window?.state === "scanning") {
+      writeJSON("hengce.overnight.snapshot.v1", {
+        date: todayKey(),
+        snapshot
+      });
+    }
+  } catch (error) {
+    state.overnightError = friendlyMarketError(error);
+  } finally {
+    state.overnightLoading = false;
+    renderOvernight();
+  }
+}
+
 function metricCell(title, value, detail, className = "") {
   return `
     <div class="metric-cell">
@@ -1630,6 +1863,7 @@ function switchView(view) {
   if (view === "backtest") requestAnimationFrame(renderBacktest);
   if (view === "hotspots") loadHotspots();
   if (view === "recommendations") loadRecommendations();
+  if (view === "overnight") loadOvernight();
   if (view === "watchlist") loadWatchlist();
   if (view === "holdings") updateHoldingQuotes();
   if (view === "dashboard") schedulePriceChart();
@@ -1646,6 +1880,9 @@ function bindEvents() {
   );
   $("#refresh-recommendations").addEventListener("click", () =>
     loadRecommendations({ force: true })
+  );
+  $("#refresh-overnight").addEventListener("click", () =>
+    loadOvernight({ force: true })
   );
   $("#refresh-watchlist").addEventListener("click", () =>
     loadWatchlist({ force: true })
@@ -1806,4 +2043,6 @@ renderHoldings();
 renderWatchlist();
 renderPortfolioRisk();
 refreshIcons();
+updateOvernightClock();
+setInterval(updateOvernightClock, 1000);
 loadMarketData(state.code);

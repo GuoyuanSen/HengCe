@@ -78,6 +78,17 @@ test("A-share recommendations are a standalone lazy-loaded view", () => {
   assert.match(renderer, /不构成投资建议/);
 });
 
+test("overnight tail scan is a standalone timed view", () => {
+  assert.match(preload, /overnight:\s*\(\)/);
+  assert.match(main, /ipcMain\.handle\("market:overnight"/);
+  assert.match(html, /data-view="overnight"/);
+  assert.match(html, /id="overnight-view"/);
+  assert.match(html, /14:30–14:40/);
+  assert.match(renderer, /if \(view === "overnight"\) loadOvernight\(\)/);
+  assert.match(renderer, /window\.hengce\.overnight\(\)/);
+  assert.match(renderer, /没有信号就保持空仓/);
+});
+
 test("watchlist alerts and portfolio risk are connected to live market data", () => {
   assert.match(html, /data-view="watchlist"/);
   assert.match(html, /id="watchlist-view"/);

@@ -24,6 +24,15 @@ const {
   parseCandidatePayload,
   validateHistoricalSignals
 } = require("./recommendations.js");
+const {
+  buildOvernightSnapshot,
+  intradayAverageState,
+  parseIntradayTrends,
+  parseOvernightCandidatePayload,
+  recentLimitUp,
+  scanWindow,
+  validateOvernightProxy
+} = require("./overnight.js");
 
 const APP_ID = "com.guoyuansen.hengce";
 const FRIENDLY_MARKET_ERROR = "行情服务暂时无响应，请检查网络后重试。";
@@ -495,6 +504,101 @@ async function fetchRecommendations() {
   return snapshot;
 }
 
+async function fetchIntradayTrends(code) {
+  const params = new URLSearchParams({
+    secid: secidFor(code),
+    fields1: "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13",
+    fields2: "f51,f52,f53,f54,f55,f56,f57,f58",
+    ndays: "1",
+    iscr: "0",
+    iscca: "0"
+  });
+  const payload = await requestJSON(
+    `https://push2his.eastmoney.com/api/qt/stock/trends2/get?${params}`
+  );
+  const points = parseIntradayTrends(payload);
+  if (!points.length) throw new Error("分时均价数据为空");
+  return points;
+}
+
+async function fetchOvernightScan() {
+  const window = scanWindow();
+  if (!window.canScan) {
+    return {
+      ...buildOvernightSnapshot([], { window, poolSize: 0, prefilteredCount: 0 }),
+      sourceStatus: {
+        candidateSource: "东方财富A股实时行情",
+        intradaySource: "东方财富分时均价",
+        historySource: "腾讯行情优先，东方财富降级",
+        partial: false
+      }
+    };
+  }
+  const params = new URLSearchParams({
+    pn: "1",
+    pz: "100",
+    po: "1",
+    np: "1",
+    fltt: "2",
+    invt: "2",
+    fid: "f3",
+    fs: "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23",
+    fields: "f2,f3,f6,f8,f10,f12,f14,f20,f21,f100"
+  });
+  const fetchPool = async (baseUrl) => {
+    const rows = [];
+    let total = 0;
+    for (let page = 1; page <= 25; page += 1) {
+      params.set("pn", String(page));
+      const payload = await requestJSON(`${baseUrl}?${params}`);
+      const pageRows = payload?.data?.diff;
+      if (!Array.isArray(pageRows) || !pageRows.length) break;
+      total = Number(payload?.data?.total || total);
+      rows.push(...pageRows);
+      const lastChange = Number(pageRows.at(-1)?.f3);
+      if (Number.isFinite(lastChange) && lastChange < 3) break;
+    }
+    if (!rows.length) throw new Error("尾盘候选池数据为空");
+    return { data: { diff: rows, total } };
+  };
+  const payload = await firstAvailable("尾盘候选池", [
+    () => fetchPool("https://push2delay.eastmoney.com/api/qt/clist/get"),
+    () => fetchPool("https://push2.eastmoney.com/api/qt/clist/get")
+  ]);
+  const poolSize = Number(payload?.data?.total || payload?.data?.diff?.length || 0);
+  const prefiltered = parseOvernightCandidatePayload(payload);
+  const selected = prefiltered.slice(0, 40);
+  const settled = await mapWithConcurrency(selected, 6, async (candidate) => {
+    const [bars, points] = await Promise.all([
+      fetchKLines(candidate.code, 160),
+      fetchIntradayTrends(candidate.code)
+    ]);
+    return {
+      candidate,
+      limitUp: recentLimitUp(bars, candidate.code),
+      intraday: intradayAverageState(points),
+      validation: validateOvernightProxy(bars, candidate.code)
+    };
+  });
+  const items = settled
+    .filter((item) => item.status === "fulfilled")
+    .map((item) => item.value);
+  const snapshot = buildOvernightSnapshot(items, {
+    window,
+    poolSize,
+    prefilteredCount: prefiltered.length
+  });
+  snapshot.sourceStatus = {
+    candidateSource: "东方财富A股实时行情",
+    intradaySource: "东方财富分时均价",
+    historySource: "腾讯行情优先，东方财富降级",
+    loaded: items.length,
+    requested: selected.length,
+    partial: items.length < selected.length
+  };
+  return snapshot;
+}
+
 async function fetchStockProfile(rawCode) {
   const code = validatedCode(rawCode);
   const params = new URLSearchParams({
@@ -578,6 +682,7 @@ app.whenReady().then(() => {
   ipcMain.handle("market:valuation", (_, code) => fetchValuation(code));
   ipcMain.handle("market:hotspots", () => fetchHotspots());
   ipcMain.handle("market:recommendations", () => fetchRecommendations());
+  ipcMain.handle("market:overnight", () => fetchOvernightScan());
   ipcMain.handle("market:profile", (_, code) => fetchStockProfile(code));
   ipcMain.handle("system:notify", (_, title, body) => {
     if (!Notification.isSupported()) return false;
