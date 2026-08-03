@@ -340,6 +340,12 @@ function percent(value, ratio = false) {
   return `${normalized >= 0 ? "+" : ""}${number(normalized, 2)}%`;
 }
 
+function plainPercent(value, ratio = false) {
+  if (!Number.isFinite(Number(value))) return "--";
+  const normalized = ratio ? Number(value) * 100 : Number(value);
+  return `${number(normalized, 2)}%`;
+}
+
 function compactMoney(value) {
   if (value == null || value === "") return "--";
   const absolute = Math.abs(Number(value));
@@ -838,7 +844,7 @@ function renderRecommendations() {
               </td>
               <td>
                 <div class="validation-cell">
-                  <strong>${item.validation?.fiveDay?.hitRate == null ? "样本不足" : `5日胜率 ${percent(item.validation.fiveDay.hitRate, true)}`}</strong>
+                  <strong>${item.validation?.fiveDay?.hitRate == null ? "样本不足" : `5日胜率 ${plainPercent(item.validation.fiveDay.hitRate, true)}`}</strong>
                   <small>${item.validation?.twentyDay?.averageReturn == null ? "等待更多历史信号" : `20日均值 ${percent(item.validation.twentyDay.averageReturn, true)} · ${item.validation.twentyDay.sampleCount}次`}</small>
                 </div>
               </td>
@@ -1420,12 +1426,16 @@ function renderPortfolioRisk() {
     return;
   }
   const riskClass =
-    risk.riskLevel === "较高" ? "risk-high" : risk.riskLevel === "中等" ? "risk-medium" : "risk-low";
+    risk.riskLevel === "较高"
+      ? "portfolio-risk-high"
+      : risk.riskLevel === "中等"
+        ? "portfolio-risk-medium"
+        : "portfolio-risk-low";
   const metrics = [
     ["组合风险", risk.riskLevel, `${risk.sampleDays} 个共同交易日`, riskClass],
-    ["年化波动", risk.annualizedVolatility == null ? "--" : percent(risk.annualizedVolatility, true), "按日收益估算"],
+    ["年化波动", risk.annualizedVolatility == null ? "--" : plainPercent(risk.annualizedVolatility, true), "按日收益估算"],
     ["平均相关性", risk.averageCorrelation == null ? "--" : number(risk.averageCorrelation), "越低越分散"],
-    ["最大单股占比", percent(risk.maxWeight, true), risk.maxWeight > 0.4 ? "集中度偏高" : "集中度可控"],
+    ["最大单股占比", plainPercent(risk.maxWeight, true), risk.maxWeight > 0.4 ? "集中度偏高" : "集中度可控"],
     ["分散评分", `${risk.diversificationScore}`, "仅衡量权重分散"]
   ];
   container.innerHTML = `
@@ -1444,7 +1454,7 @@ function renderPortfolioRisk() {
         <div class="exposure-row">
           <span>${escapeHTML(industry.name)}</span>
           <div><i style="width:${Math.min(100, industry.weight * 100)}%"></i></div>
-          <strong>${percent(industry.weight, true)}</strong>
+          <strong>${plainPercent(industry.weight, true)}</strong>
         </div>
       `).join("") || '<span class="muted">行业资料暂不可用</span>'}
     </div>

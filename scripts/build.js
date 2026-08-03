@@ -107,7 +107,7 @@ async function main() {
     icon: iconFile,
     appBundleId: "com.guoyuansen.hengce",
     appVersion,
-    buildVersion: "6",
+    buildVersion: "7",
     appCategoryType: "public.app-category.finance",
     asar: true,
     prune: false

@@ -1137,6 +1137,18 @@ h2 {
   font-size: 17px;
 }
 
+.portfolio-risk-high {
+  color: var(--red);
+}
+
+.portfolio-risk-medium {
+  color: var(--amber);
+}
+
+.portfolio-risk-low {
+  color: var(--green);
+}
+
 .industry-exposure {
   margin-top: 14px;
   padding: 14px 16px;

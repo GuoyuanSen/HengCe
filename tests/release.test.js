@@ -17,10 +17,22 @@ const workflow = fs.readFileSync(
   path.join(root, ".github", "workflows", "build-windows.yml"),
   "utf8"
 );
+const releaseWorkflow = fs.readFileSync(
+  path.join(root, ".github", "workflows", "release.yml"),
+  "utf8"
+);
 
-test("release version is synchronized for v0.2.0", () => {
-  assert.equal(packageJson.version, "0.2.0");
+test("release version is synchronized for v0.3.0", () => {
+  assert.equal(packageJson.version, "0.3.0");
   assert.match(packageJson.scripts["build:win"], /build_windows\.js/);
+});
+
+test("tag workflow builds both platforms and publishes release assets", () => {
+  assert.match(releaseWorkflow, /tags:\s*\["v\*"\]/);
+  assert.match(releaseWorkflow, /runs-on:\s*macos-14/);
+  assert.match(releaseWorkflow, /runs-on:\s*windows-2022/);
+  assert.match(releaseWorkflow, /gh release create/);
+  assert.match(releaseWorkflow, /contents:\s*write/);
 });
 
 test("Windows build targets x64 and emits installer and portable checksums", () => {
