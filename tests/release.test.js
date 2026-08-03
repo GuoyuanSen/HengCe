@@ -22,8 +22,8 @@ const releaseWorkflow = fs.readFileSync(
   "utf8"
 );
 
-test("release version is synchronized for v0.3.0", () => {
-  assert.equal(packageJson.version, "0.3.0");
+test("release version is synchronized for v0.3.1", () => {
+  assert.equal(packageJson.version, "0.3.1");
   assert.match(packageJson.scripts["build:win"], /build_windows\.js/);
 });
 
@@ -32,6 +32,7 @@ test("tag workflow builds both platforms and publishes release assets", () => {
   assert.match(releaseWorkflow, /runs-on:\s*macos-14/);
   assert.match(releaseWorkflow, /runs-on:\s*windows-2022/);
   assert.match(releaseWorkflow, /gh release create/);
+  assert.match(releaseWorkflow, /RELEASE_NOTES_\$\{GITHUB_REF_NAME\}\.md/);
   assert.match(releaseWorkflow, /contents:\s*write/);
 });
 
