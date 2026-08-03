@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, net, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, net, Notification, shell } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const {
@@ -486,6 +486,33 @@ async function fetchRecommendations() {
   });
 }
 
+async function fetchStockProfile(rawCode) {
+  const code = validatedCode(rawCode);
+  const params = new URLSearchParams({
+    secid: secidFor(code),
+    fltt: "2",
+    invt: "2",
+    fields: "f57,f58,f20,f21,f100"
+  });
+  const fetchProfile = async (baseUrl) => {
+    const payload = await requestJSON(`${baseUrl}?${params}`);
+    if (!payload?.data) throw new Error("股票资料暂不可用");
+    return payload.data;
+  };
+  const item = await firstAvailable(`股票资料 ${code}`, [
+    () => fetchProfile("https://push2delay.eastmoney.com/api/qt/stock/get"),
+    () => fetchProfile("https://push2.eastmoney.com/api/qt/stock/get")
+  ]);
+  return {
+    code,
+    name: String(item.f58 || code),
+    industry: String(item.f100 || "未分类"),
+    totalMarketCap: Number(item.f20 || 0),
+    floatMarketCap: Number(item.f21 || 0),
+    asOf: new Date().toISOString()
+  };
+}
+
 function createWindow() {
   const isMac = process.platform === "darwin";
   const window = new BrowserWindow({
@@ -542,6 +569,12 @@ app.whenReady().then(() => {
   ipcMain.handle("market:valuation", (_, code) => fetchValuation(code));
   ipcMain.handle("market:hotspots", () => fetchHotspots());
   ipcMain.handle("market:recommendations", () => fetchRecommendations());
+  ipcMain.handle("market:profile", (_, code) => fetchStockProfile(code));
+  ipcMain.handle("system:notify", (_, title, body) => {
+    if (!Notification.isSupported()) return false;
+    new Notification({ title: String(title), body: String(body) }).show();
+    return true;
+  });
   ipcMain.handle("system:open-external", (_, url) => {
     if (/^https:\/\//.test(url)) return shell.openExternal(url);
     return false;

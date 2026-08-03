@@ -78,6 +78,19 @@ test("A-share recommendations are a standalone lazy-loaded view", () => {
   assert.match(renderer, /不构成投资建议/);
 });
 
+test("watchlist alerts and portfolio risk are connected to live market data", () => {
+  assert.match(html, /data-view="watchlist"/);
+  assert.match(html, /id="watchlist-view"/);
+  assert.match(html, /id="portfolio-risk-content"/);
+  assert.match(html, /src="portfolio\.js"/);
+  assert.match(preload, /profile:\s*\(code\)/);
+  assert.match(preload, /notify:\s*\(title, body\)/);
+  assert.match(main, /ipcMain\.handle\("market:profile"/);
+  assert.match(main, /ipcMain\.handle\("system:notify"/);
+  assert.match(renderer, /function loadWatchlist/);
+  assert.match(renderer, /function updatePortfolioRisk/);
+});
+
 test("charts wait for visible bounds and observe container resizing", () => {
   assert.match(renderer, /if \(width < 1 \|\| height < 1\) return null/);
   assert.match(renderer, /function schedulePriceChart/);

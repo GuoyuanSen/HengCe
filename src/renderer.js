@@ -171,11 +171,14 @@ if (!window.hengce && isBrowserPreview) {
           code: "603039",
           name: "泛微网络",
           score: 82,
+          technicalScore: 78,
           price: last.close,
           changePercent: 3.31,
           industry: "软件开发",
           momentum20: 0.094,
           risk: "中等",
+          pressure: 31.8,
+          riskLine: 27.9,
           factors: { trend: 88, momentum: 82, volume: 76, liquidity: 71, risk: 64, valuation: 59 },
           validation: {
             signalCount: 8,
@@ -188,11 +191,14 @@ if (!window.hengce && isBrowserPreview) {
           code: "002475",
           name: "立讯精密",
           score: 76,
+          technicalScore: 74,
           price: 43.18,
           changePercent: 2.84,
           industry: "消费电子",
           momentum20: 0.071,
           risk: "较低",
+          pressure: 45.2,
+          riskLine: 39.6,
           factors: { trend: 84, momentum: 74, volume: 68, liquidity: 88, risk: 81, valuation: 63 },
           validation: {
             signalCount: 7,
@@ -203,6 +209,13 @@ if (!window.hengce && isBrowserPreview) {
         }
       ]
     }),
+    profile: async (code) => ({
+      code,
+      name: code === "603039" ? "泛微网络" : "演示标的",
+      industry: code === "603039" ? "软件开发" : "未分类",
+      asOf: new Date().toISOString()
+    }),
+    notify: async () => true,
     openExternal: async (url) => window.open(url, "_blank")
   };
 }
@@ -218,6 +231,8 @@ if (!window.hengce) {
     valuation: unavailable,
     hotspots: unavailable,
     recommendations: unavailable,
+    profile: unavailable,
+    notify: async () => false,
     openExternal: unavailable
   };
 }
@@ -260,12 +275,20 @@ const state = {
     risk: "all",
     minScore: 55
   },
+  watchlist: readJSON("hengce.watchlist.v1", []),
+  watchlistData: new Map(),
+  watchlistLoading: false,
+  watchlistError: "",
   analysis: null,
   chartRange: 120,
   strategy: "movingAverage",
   backtestYears: 3,
   holdings: readJSON("hengce.holdings.v2", []),
   quotes: new Map(),
+  holdingHistories: new Map(),
+  profiles: new Map(),
+  portfolioRisk: null,
+  portfolioRiskLoading: false,
   settings: { ...DEFAULT_SETTINGS, ...readJSON("hengce.settings.v1", {}) },
   loading: false
 };
@@ -794,7 +817,14 @@ function renderRecommendations() {
               </td>
               <td><span class="risk-pill risk-${item.risk === "较高" ? "high" : item.risk === "中等" ? "medium" : "low"}">${escapeHTML(item.risk)}</span></td>
               <td class="recommendation-reasons">${(item.reasons || []).map(escapeHTML).join(" · ") || "量价结构达到观察门槛"}</td>
-              <td><button class="secondary-button analyze-recommendation" data-code="${escapeHTML(item.code)}">查看分析</button></td>
+              <td>
+                <div class="table-actions">
+                  <button class="secondary-button analyze-recommendation" data-code="${escapeHTML(item.code)}">分析</button>
+                  <button class="table-action watch-recommendation" data-code="${escapeHTML(item.code)}" title="加入观察" ${state.watchlist.some((entry) => entry.code === item.code) ? "disabled" : ""}>
+                    <i data-lucide="bell-plus"></i>
+                  </button>
+                </div>
+              </td>
             </tr>
           `;
         })
@@ -808,6 +838,26 @@ function renderRecommendations() {
       loadMarketData(code);
     })
   );
+  $$(".watch-recommendation").forEach((button) =>
+    button.addEventListener("click", () => {
+      const item = allRows.find((entry) => entry.code === button.dataset.code);
+      if (!item || state.watchlist.some((entry) => entry.code === item.code)) return;
+      state.watchlist.push({
+        code: item.code,
+        name: item.name,
+        industry: item.industry || "未分类",
+        addedAt: new Date().toISOString(),
+        baselineScore: item.technicalScore ?? item.score,
+        pressure: item.pressure,
+        riskLine: item.riskLine,
+        lastAlert: ""
+      });
+      writeJSON("hengce.watchlist.v1", state.watchlist);
+      renderRecommendations();
+      renderWatchlist();
+      showToast(`${item.name} 已加入观察`);
+    })
+  );
   const asOf = new Date(snapshot.asOf);
   const timestamp = Number.isNaN(asOf.getTime())
     ? "--"
@@ -819,6 +869,128 @@ function renderRecommendations() {
       });
   $("#recommendations-note").textContent =
     `数据时间 ${timestamp}。榜单仅扫描成交活跃样本，并排除 ST、退市及极端波动标的；结果是量化观察池，不构成投资建议。`;
+}
+
+function watchAlert(item, data) {
+  if (!data?.quote || !data?.model) return "等待行情";
+  if (Number.isFinite(item.riskLine) && data.quote.price <= item.riskLine) {
+    return "跌破风险线";
+  }
+  if (Number.isFinite(item.pressure) && data.quote.price >= item.pressure) {
+    return "突破压力位";
+  }
+  const scoreChange = data.model.score - (item.baselineScore ?? data.model.score);
+  if (scoreChange >= 10) return "评分明显提升";
+  if (scoreChange <= -10) return "评分明显下降";
+  return "观察中";
+}
+
+function renderWatchlist() {
+  const loading = $("#watchlist-loading");
+  const error = $("#watchlist-error");
+  loading.classList.toggle("hidden", !state.watchlistLoading);
+  error.textContent = state.watchlistError;
+  error.classList.toggle("hidden", !state.watchlistError);
+  $("#refresh-watchlist").disabled = state.watchlistLoading;
+  $("#refresh-watchlist").classList.toggle("rotating", state.watchlistLoading);
+  const rows = state.watchlist.map((item) => ({
+    item,
+    data: state.watchlistData.get(item.code),
+    alert: watchAlert(item, state.watchlistData.get(item.code))
+  }));
+  const alertCount = rows.filter(({ alert }) =>
+    !["观察中", "等待行情"].includes(alert)
+  ).length;
+  const scores = rows
+    .map(({ data }) => data?.model?.score)
+    .filter(Number.isFinite);
+  $("#watchlist-summary").innerHTML = [
+    hotspotStat("观察标的", `${rows.length} 只`, "仅保存在本机"),
+    hotspotStat("触发提醒", `${alertCount} 项`, "突破、风险线或评分变化"),
+    hotspotStat(
+      "平均评分",
+      scores.length ? number(scores.reduce((sum, value) => sum + value, 0) / scores.length, 0) : "--",
+      "当前技术模型评分"
+    ),
+    hotspotStat("提醒方式", "应用内 + 系统", "刷新行情时检查")
+  ].join("");
+  $("#watchlist-badge").textContent = String(alertCount);
+  $("#watchlist-badge").classList.toggle("hidden", alertCount === 0);
+  $("#watchlist-empty").classList.toggle("hidden", rows.length > 0);
+  $("#watchlist-table-body").innerHTML = rows
+    .map(({ item, data, alert }) => {
+      const addedAt = new Date(item.addedAt);
+      const alertClass = alert === "观察中" ? "" : alert === "等待行情" ? "muted" : "alert-active";
+      return `
+        <tr>
+          <td><div class="stock-cell"><strong>${escapeHTML(item.name)}</strong><span>${escapeHTML(item.code)} · ${escapeHTML(item.industry)}</span></div></td>
+          <td class="${directionClass(data?.quote?.percentChange)}"><strong>${number(data?.quote?.price)}</strong><small>${percent(data?.quote?.percentChange)}</small></td>
+          <td><strong>${number(data?.model?.score, 0)}</strong><small>${escapeHTML(data?.model?.trend || "--")}</small></td>
+          <td>${number(item.pressure)} / ${number(item.riskLine)}</td>
+          <td><span class="watch-alert ${alertClass}">${escapeHTML(alert)}</span></td>
+          <td>${Number.isNaN(addedAt.getTime()) ? "--" : addedAt.toLocaleDateString("zh-CN")}</td>
+          <td><div class="table-actions"><button class="secondary-button analyze-watch" data-code="${item.code}">分析</button><button class="table-action remove-watch" data-code="${item.code}" title="移除观察"><i data-lucide="trash-2"></i></button></div></td>
+        </tr>
+      `;
+    })
+    .join("");
+  $$(".analyze-watch").forEach((button) =>
+    button.addEventListener("click", () => {
+      $("#stock-code").value = button.dataset.code;
+      switchView("dashboard");
+      loadMarketData(button.dataset.code);
+    })
+  );
+  $$(".remove-watch").forEach((button) =>
+    button.addEventListener("click", () => {
+      state.watchlist = state.watchlist.filter((item) => item.code !== button.dataset.code);
+      state.watchlistData.delete(button.dataset.code);
+      writeJSON("hengce.watchlist.v1", state.watchlist);
+      renderWatchlist();
+      if (state.recommendations) renderRecommendations();
+      showToast("已移出观察列表");
+    })
+  );
+  refreshIcons();
+}
+
+async function loadWatchlist({ force = false } = {}) {
+  if (state.watchlistLoading || (!force && state.watchlist.length && state.watchlistData.size === state.watchlist.length)) {
+    renderWatchlist();
+    return;
+  }
+  state.watchlistLoading = true;
+  state.watchlistError = "";
+  renderWatchlist();
+  const settled = await Promise.allSettled(
+    state.watchlist.map(async (item) => {
+      const [quote, bars] = await Promise.all([
+        window.hengce.quote(item.code),
+        window.hengce.klines(item.code, 130)
+      ]);
+      return { item, quote, bars, model: analyze(bars) };
+    })
+  );
+  let failureCount = 0;
+  for (const result of settled) {
+    if (result.status !== "fulfilled") {
+      failureCount += 1;
+      continue;
+    }
+    const { item, ...data } = result.value;
+    state.watchlistData.set(item.code, data);
+    const alert = watchAlert(item, data);
+    if (!["观察中", "等待行情"].includes(alert) && alert !== item.lastAlert) {
+      window.hengce.notify("衡策观察提醒", `${item.name}：${alert}`);
+      item.lastAlert = alert;
+    } else if (alert === "观察中") {
+      item.lastAlert = "";
+    }
+  }
+  writeJSON("hengce.watchlist.v1", state.watchlist);
+  if (failureCount) state.watchlistError = `${failureCount} 只标的暂未取得完整行情，其余结果已更新。`;
+  state.watchlistLoading = false;
+  renderWatchlist();
 }
 
 async function loadRecommendations({ force = false } = {}) {
@@ -1198,6 +1370,100 @@ async function updateHoldingQuotes() {
     }
   });
   renderHoldings();
+  updatePortfolioRisk();
+}
+
+function renderPortfolioRisk() {
+  const container = $("#portfolio-risk-content");
+  if (state.portfolioRiskLoading) {
+    container.innerHTML = '<div class="valuation-loading"><span class="spinner"></span><span>正在计算持仓相关性与行业暴露</span></div>';
+    return;
+  }
+  const risk = state.portfolioRisk;
+  if (!risk || !state.holdings.length) {
+    container.innerHTML = '<span class="muted">添加持仓后计算组合风险</span>';
+    return;
+  }
+  const riskClass =
+    risk.riskLevel === "较高" ? "risk-high" : risk.riskLevel === "中等" ? "risk-medium" : "risk-low";
+  const metrics = [
+    ["组合风险", risk.riskLevel, `${risk.sampleDays} 个共同交易日`, riskClass],
+    ["年化波动", risk.annualizedVolatility == null ? "--" : percent(risk.annualizedVolatility, true), "按日收益估算"],
+    ["平均相关性", risk.averageCorrelation == null ? "--" : number(risk.averageCorrelation), "越低越分散"],
+    ["最大单股占比", percent(risk.maxWeight, true), risk.maxWeight > 0.4 ? "集中度偏高" : "集中度可控"],
+    ["分散评分", `${risk.diversificationScore}`, "仅衡量权重分散"]
+  ];
+  container.innerHTML = `
+    <div class="portfolio-risk-metrics">
+      ${metrics.map(([label, value, detail, className = ""]) => `
+        <div class="portfolio-risk-stat">
+          <span>${label}</span>
+          <strong class="${className}">${value}</strong>
+          <small>${detail}</small>
+        </div>
+      `).join("")}
+    </div>
+    <div class="industry-exposure">
+      <h3>行业暴露</h3>
+      ${risk.industries.map((industry) => `
+        <div class="exposure-row">
+          <span>${escapeHTML(industry.name)}</span>
+          <div><i style="width:${Math.min(100, industry.weight * 100)}%"></i></div>
+          <strong>${percent(industry.weight, true)}</strong>
+        </div>
+      `).join("") || '<span class="muted">行业资料暂不可用</span>'}
+    </div>
+  `;
+  $("#portfolio-risk-caption").textContent =
+    `按近120个交易日估算 · ${risk.positionCount}/${state.holdings.length} 只完成计算`;
+}
+
+async function updatePortfolioRisk() {
+  if (!state.holdings.length) {
+    state.portfolioRisk = null;
+    renderPortfolioRisk();
+    return;
+  }
+  state.portfolioRiskLoading = true;
+  renderPortfolioRisk();
+  const missingHistories = state.holdings.filter(
+    (holding) => !state.holdingHistories.has(holding.code)
+  );
+  const missingProfiles = state.holdings.filter(
+    (holding) => !state.profiles.has(holding.code)
+  );
+  const [historyResults, profileResults] = await Promise.all([
+    Promise.allSettled(
+      missingHistories.map(async (holding) => ({
+        code: holding.code,
+        bars: await window.hengce.klines(holding.code, 130)
+      }))
+    ),
+    Promise.allSettled(
+      missingProfiles.map(async (holding) => ({
+        code: holding.code,
+        profile: await window.hengce.profile(holding.code)
+      }))
+    )
+  ]);
+  historyResults.forEach((result) => {
+    if (result.status === "fulfilled") {
+      state.holdingHistories.set(result.value.code, result.value.bars);
+    }
+  });
+  profileResults.forEach((result) => {
+    if (result.status === "fulfilled") {
+      state.profiles.set(result.value.code, result.value.profile);
+    }
+  });
+  state.portfolioRisk = window.HengCePortfolio.buildPortfolioRisk(
+    state.holdings,
+    state.quotes,
+    state.holdingHistories,
+    state.profiles
+  );
+  state.portfolioRiskLoading = false;
+  renderPortfolioRisk();
 }
 
 function renderHoldings() {
@@ -1276,7 +1542,10 @@ function renderHoldings() {
         (item) => item.code !== button.dataset.code
       );
       writeJSON("hengce.holdings.v2", state.holdings);
+      state.holdingHistories.delete(button.dataset.code);
+      state.profiles.delete(button.dataset.code);
       renderHoldings();
+      updatePortfolioRisk();
       renderDashboard();
       showToast("持仓记录已删除");
     })
@@ -1316,6 +1585,7 @@ function switchView(view) {
   if (view === "backtest") requestAnimationFrame(renderBacktest);
   if (view === "hotspots") loadHotspots();
   if (view === "recommendations") loadRecommendations();
+  if (view === "watchlist") loadWatchlist();
   if (view === "holdings") updateHoldingQuotes();
   if (view === "dashboard") schedulePriceChart();
 }
@@ -1331,6 +1601,9 @@ function bindEvents() {
   );
   $("#refresh-recommendations").addEventListener("click", () =>
     loadRecommendations({ force: true })
+  );
+  $("#refresh-watchlist").addEventListener("click", () =>
+    loadWatchlist({ force: true })
   );
   [
     ["#recommendation-market", "market"],
@@ -1485,5 +1758,7 @@ function bindEvents() {
 populateSettings();
 bindEvents();
 renderHoldings();
+renderWatchlist();
+renderPortfolioRisk();
 refreshIcons();
 loadMarketData(state.code);

@@ -170,6 +170,17 @@ html[data-platform="win32"] .toolbar {
   height: 18px;
 }
 
+.nav-badge {
+  min-width: 17px;
+  margin-left: auto;
+  padding: 1px 5px;
+  border-radius: 9px;
+  color: #fff;
+  background: var(--red);
+  font-size: 9px;
+  text-align: center;
+}
+
 .sidebar-foot {
   margin-top: auto;
   padding: 14px 9px 0;
@@ -1005,6 +1016,135 @@ h2 {
   min-width: 72px;
   padding: 6px 10px;
   white-space: nowrap;
+}
+
+.table-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.table-action:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+#watchlist-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.watchlist-table {
+  min-width: 920px;
+}
+
+.watchlist-table th:first-child,
+.watchlist-table td:first-child,
+.watchlist-table th:nth-child(5),
+.watchlist-table td:nth-child(5) {
+  text-align: left;
+}
+
+.watchlist-table td:nth-child(2) small,
+.watchlist-table td:nth-child(3) small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.watch-alert {
+  display: inline-flex;
+  padding: 4px 8px;
+  border-radius: 11px;
+  color: var(--muted);
+  background: #edf0f3;
+  font-size: 10px;
+}
+
+.watch-alert.alert-active {
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.portfolio-risk-section {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.portfolio-risk-content {
+  min-height: 74px;
+}
+
+.portfolio-risk-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.portfolio-risk-stat {
+  min-width: 0;
+  padding: 13px 15px;
+  border-right: 1px solid var(--line);
+}
+
+.portfolio-risk-stat:last-child {
+  border-right: 0;
+}
+
+.portfolio-risk-stat span,
+.portfolio-risk-stat small {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portfolio-risk-stat strong {
+  display: block;
+  margin: 5px 0 3px;
+  font-size: 17px;
+}
+
+.industry-exposure {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.industry-exposure h3 {
+  margin: 0 0 11px;
+  font-size: 12px;
+}
+
+.exposure-row {
+  display: grid;
+  grid-template-columns: 110px minmax(120px, 1fr) 58px;
+  align-items: center;
+  gap: 10px;
+  margin-top: 7px;
+  font-size: 10px;
+}
+
+.exposure-row > div {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #e8ebef;
+}
+
+.exposure-row i {
+  display: block;
+  height: 100%;
+  background: var(--blue);
+}
+
+.exposure-row strong {
+  text-align: right;
 }
 
 .chart-section,
