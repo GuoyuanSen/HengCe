@@ -125,7 +125,8 @@ async function fetchEastmoneyQuote(code, secid, nameOverride) {
     percentChange: Number(item.f170 ?? 0),
     volume: Number(item.f47 ?? 0),
     amount: Number(item.f48 ?? 0),
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    source: "东方财富"
   };
 }
 
@@ -134,7 +135,7 @@ async function fetchTencentQuote(code, symbol, nameOverride) {
     encoding: "gb18030",
     headers: TENCENT_HEADERS
   });
-  return parseTencentQuote(text, code, nameOverride);
+  return { ...parseTencentQuote(text, code, nameOverride), source: "腾讯行情" };
 }
 
 function fetchQuoteWithFallback(code, options = {}) {
@@ -480,10 +481,18 @@ async function fetchRecommendations() {
     .filter((item) => item.status === "fulfilled")
     .map((item) => item.value);
   if (!candidates.length) throw new Error(FRIENDLY_MARKET_ERROR);
-  return buildRecommendationSnapshot(candidates, {
+  const snapshot = buildRecommendationSnapshot(candidates, {
     asOf: new Date().toISOString(),
     candidatePool: pool.length
   });
+  snapshot.sourceStatus = {
+    candidateSource: "东方财富成交额榜",
+    historySource: "腾讯行情优先，东方财富降级",
+    loaded: candidates.length,
+    requested: selected.length,
+    partial: candidates.length < selected.length
+  };
+  return snapshot;
 }
 
 async function fetchStockProfile(rawCode) {

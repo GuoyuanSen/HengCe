@@ -74,7 +74,8 @@ if (!window.hengce && isBrowserPreview) {
       percentChange: (last.close / demoBars.at(-2).close - 1) * 100,
       volume: last.volume,
       amount: last.amount,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      source: "浏览器演示数据"
     }),
     klines: async () => demoBars,
     indices: async () => [
@@ -165,6 +166,13 @@ if (!window.hengce && isBrowserPreview) {
         scannedCount: 30,
         qualifiedCount: 8,
         leadingStock: "泛微网络"
+      },
+      sourceStatus: {
+        candidateSource: "东方财富成交额榜",
+        historySource: "腾讯行情优先，东方财富降级",
+        loaded: 30,
+        requested: 30,
+        partial: false
       },
       recommendations: [
         {
@@ -346,6 +354,13 @@ function directionClass(value) {
     return "";
   }
   return Number(value) >= 0 ? "up" : "down";
+}
+
+function freshness(asOf, maxAgeMinutes = 30) {
+  const timestamp = new Date(asOf).getTime();
+  if (!Number.isFinite(timestamp)) return { stale: true, ageMinutes: null };
+  const ageMinutes = Math.max(0, (Date.now() - timestamp) / 60000);
+  return { stale: ageMinutes > maxAgeMinutes, ageMinutes };
 }
 
 function scoreColor(score) {
@@ -743,11 +758,23 @@ function renderRecommendations() {
 
   const snapshot = state.recommendations;
   const summary = snapshot.summary;
+  const dataFreshness = freshness(snapshot.asOf, 30);
+  const staleWarning = $("#recommendations-stale");
+  staleWarning.textContent = dataFreshness.stale
+    ? "这份优选结果已超过30分钟。排名仅供回看，请刷新数据后再加入观察。"
+    : "";
+  staleWarning.classList.toggle("hidden", !dataFreshness.stale);
+  const sourceStatus = snapshot.sourceStatus || {};
   $("#recommendations-summary").innerHTML = [
     hotspotStat("当前领先", summary.leadingStock, "综合因子排名第一"),
     hotspotStat("初筛样本", `${summary.candidatePool} 只`, "成交活跃且通过基础风控"),
     hotspotStat("完成计算", `${summary.scannedCount} 只`, "读取至少60个交易日"),
-    hotspotStat("达到门槛", `${summary.qualifiedCount} 只`, "综合评分不低于55")
+    hotspotStat("达到门槛", `${summary.qualifiedCount} 只`, "综合评分不低于55"),
+    hotspotStat(
+      "数据状态",
+      dataFreshness.stale ? "已过期" : sourceStatus.partial ? "部分降级" : "最新",
+      `${sourceStatus.loaded ?? "--"}/${sourceStatus.requested ?? "--"} 只完成历史计算`
+    )
   ].join("");
   const allRows = snapshot.recommendations || [];
   const industries = [...new Set(allRows.map((item) => item.industry).filter(Boolean))]
@@ -820,7 +847,7 @@ function renderRecommendations() {
               <td>
                 <div class="table-actions">
                   <button class="secondary-button analyze-recommendation" data-code="${escapeHTML(item.code)}">分析</button>
-                  <button class="table-action watch-recommendation" data-code="${escapeHTML(item.code)}" title="加入观察" ${state.watchlist.some((entry) => entry.code === item.code) ? "disabled" : ""}>
+                  <button class="table-action watch-recommendation" data-code="${escapeHTML(item.code)}" title="加入观察" ${dataFreshness.stale || state.watchlist.some((entry) => entry.code === item.code) ? "disabled" : ""}>
                     <i data-lucide="bell-plus"></i>
                   </button>
                 </div>
@@ -868,7 +895,7 @@ function renderRecommendations() {
         minute: "2-digit"
       });
   $("#recommendations-note").textContent =
-    `数据时间 ${timestamp}。榜单仅扫描成交活跃样本，并排除 ST、退市及极端波动标的；结果是量化观察池，不构成投资建议。`;
+    `数据时间 ${timestamp} · 候选池：${sourceStatus.candidateSource || "公开成交额榜"} · 历史：${sourceStatus.historySource || "公开前复权日线"}。榜单排除 ST、退市及极端波动标的；结果是量化观察池，不构成投资建议。`;
 }
 
 function watchAlert(item, data) {
@@ -1025,6 +1052,14 @@ function renderDashboard() {
   const quote = state.quote;
   const model = state.analysis;
   if (!quote || !model) return;
+  const quoteFreshness = freshness(quote.timestamp, 15);
+  const dataStatus = $("#dashboard-data-status");
+  dataStatus.innerHTML = `
+    <span class="status-dot ${quoteFreshness.stale ? "stale" : ""}"></span>
+    <span>${quoteFreshness.stale ? "行情可能已过期" : "行情时间有效"}</span>
+    <small>报价：${escapeHTML(quote.source || "腾讯/东方财富公开行情")} · 日线：前复权双源降级 · 财务与行业：东方财富公开数据</small>
+  `;
+  dataStatus.classList.remove("hidden");
   const change = quote.price - quote.previousClose;
   const holding = state.holdings.find((item) => item.code === quote.code);
   const pnl = holding ? (quote.price - holding.cost) * holding.shares : null;

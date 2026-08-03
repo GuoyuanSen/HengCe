@@ -879,7 +879,35 @@ h2 {
 }
 
 #recommendations-summary {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.data-status-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: -6px 0 14px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.data-status-line small {
+  margin-left: 5px;
+  color: var(--faint);
+}
+
+.status-dot.stale {
+  background: var(--amber);
+  box-shadow: 0 0 0 3px rgba(199, 125, 24, 0.12);
+}
+
+.data-warning {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--amber);
+  color: #7b5317;
+  background: var(--amber-soft);
+  font-size: 11px;
 }
 
 .recommendation-table-section {
@@ -1729,6 +1757,26 @@ dialog label {
   }
 
   .hotspot-stat:nth-child(n + 4) {
+    border-top: 1px solid var(--line);
+  }
+
+  .recommendation-filters {
+    grid-template-columns: repeat(3, minmax(130px, 1fr));
+  }
+
+  .filter-result {
+    border-left: 0;
+  }
+
+  .portfolio-risk-metrics {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .portfolio-risk-stat:nth-child(3) {
+    border-right: 0;
+  }
+
+  .portfolio-risk-stat:nth-child(n + 4) {
     border-top: 1px solid var(--line);
   }
 }

@@ -91,6 +91,16 @@ test("watchlist alerts and portfolio risk are connected to live market data", ()
   assert.match(renderer, /function updatePortfolioRisk/);
 });
 
+test("market views expose provenance and stale-data protection", () => {
+  assert.match(html, /id="dashboard-data-status"/);
+  assert.match(html, /id="recommendations-stale"/);
+  assert.match(renderer, /function freshness/);
+  assert.match(renderer, /已超过30分钟/);
+  assert.match(renderer, /candidateSource/);
+  assert.match(main, /candidateSource:\s*"东方财富成交额榜"/);
+  assert.match(main, /source:\s*"腾讯行情"/);
+});
+
 test("charts wait for visible bounds and observe container resizing", () => {
   assert.match(renderer, /if \(width < 1 \|\| height < 1\) return null/);
   assert.match(renderer, /function schedulePriceChart/);
