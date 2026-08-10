@@ -65,6 +65,10 @@
             <span>公开行情</span>
           </div>
           <small>本地计算 · 不接管账户</small>
+          <div class="sidebar-version-row">
+            <span id="sidebar-version">v--</span>
+            <button id="sidebar-check-update" type="button">检查更新</button>
+          </div>
         </div>
       </aside>
 
@@ -170,7 +174,7 @@
                 </div>
               </div>
               <div id="trade-plan" class="trade-plan"></div>
-              <div class="chart-wrap">
+              <div id="price-chart-wrap" class="chart-wrap">
                 <canvas id="price-chart"></canvas>
                 <div id="chart-tooltip" class="chart-tooltip hidden"></div>
               </div>
@@ -687,8 +691,11 @@
           </button>
         </div>
         <label>
-          <span>股票代码</span>
-          <input name="code" maxlength="6" inputmode="numeric" required>
+          <span>股票代码或名称</span>
+          <div class="holding-search-field">
+            <input id="holding-stock-query" name="code" maxlength="20" autocomplete="off" placeholder="输入代码或中文名称" required>
+            <div id="holding-search-results" class="holding-search-results hidden"></div>
+          </div>
         </label>
         <label>
           <span>股票名称</span>

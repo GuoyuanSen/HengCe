@@ -888,6 +888,7 @@ app.whenReady().then(() => {
     return false;
   });
   ipcMain.handle("system:update-check", () => checkForUpdate());
+  ipcMain.handle("system:app-version", () => app.getVersion());
   ipcMain.handle("system:update-download", (event) =>
     downloadLatestUpdate(event.sender)
   );

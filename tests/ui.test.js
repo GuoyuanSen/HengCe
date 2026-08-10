@@ -158,3 +158,28 @@ test("settings expose verified in-app release updates", () => {
   assert.match(main, /parseChecksum/);
   assert.match(renderer, /checkForUpdates\(\{ silent: true \}\)/);
 });
+
+test("recommendation rows open analysis without requiring the trailing button", () => {
+  assert.match(renderer, /class="recommendation-row"/);
+  assert.match(renderer, /row\.addEventListener\("click"/);
+  assert.match(renderer, /analyzeStock\(row\.dataset\.code\)/);
+  assert.doesNotMatch(renderer, /class="secondary-button analyze-recommendation"/);
+});
+
+test("daily chart renders candlesticks and technical sub-panels", () => {
+  assert.match(renderer, /function drawKLineChart/);
+  assert.match(renderer, /function kdjSeries/);
+  assert.match(renderer, /function macdSeries/);
+  assert.match(renderer, /fillRect\(x - candleWidth \/ 2/);
+  assert.match(styles, /\.chart-wrap\.daily-chart/);
+});
+
+test("sidebar exposes version and updates while holdings accept name search", () => {
+  assert.match(html, /id="sidebar-version"/);
+  assert.match(html, /id="sidebar-check-update"/);
+  assert.match(preload, /appVersion:\s*\(\)/);
+  assert.match(main, /ipcMain\.handle\("system:app-version"/);
+  assert.match(html, /id="holding-stock-query"/);
+  assert.match(renderer, /function searchHoldingNames/);
+  assert.match(renderer, /data-holding-code/);
+});

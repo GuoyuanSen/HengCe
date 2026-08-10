@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld("hengce", {
   notify: (title, body) => ipcRenderer.invoke("system:notify", title, body),
   openExternal: (url) => ipcRenderer.invoke("system:open-external", url),
   checkForUpdate: () => ipcRenderer.invoke("system:update-check"),
+  appVersion: () => ipcRenderer.invoke("system:app-version"),
   downloadUpdate: () => ipcRenderer.invoke("system:update-download"),
   installUpdate: () => ipcRenderer.invoke("system:update-install"),
   onUpdateProgress: (callback) => {

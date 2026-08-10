@@ -303,17 +303,18 @@ if (!window.hengce && isBrowserPreview) {
     notify: async () => true,
     openExternal: async (url) => window.open(url, "_blank"),
     checkForUpdate: async () => ({
-      currentVersion: "0.3.2",
-      latestVersion: "0.3.3",
-      tagName: "v0.3.3",
-      releaseName: "衡策 v0.3.3",
+      currentVersion: "0.3.4",
+      latestVersion: "0.3.4",
+      tagName: "v0.3.4",
+      releaseName: "衡策 v0.3.4",
       releaseNotes: "新增应用内更新检查、下载进度和 SHA-256 完整性校验。",
       assetName: "HengCe-Apple-Silicon.dmg",
       assetSize: 136e6,
       supported: true,
       downloadable: true,
-      available: true
+      available: false
     }),
+    appVersion: async () => "0.3.4",
     downloadUpdate: async () => ({ downloaded: true, fileName: "HengCe-Apple-Silicon.dmg" }),
     installUpdate: async () => ({ opened: true, willQuit: false }),
     onUpdateProgress: () => () => {}
@@ -339,6 +340,7 @@ if (!window.hengce) {
     notify: async () => false,
     openExternal: unavailable,
     checkForUpdate: unavailable,
+    appVersion: unavailable,
     downloadUpdate: unavailable,
     installUpdate: unavailable,
     onUpdateProgress: () => () => {}
@@ -398,6 +400,7 @@ const state = {
   analysis: null,
   intraday: [],
   chartMode: "intraday",
+  chartHoverIndex: null,
   chartRange: 120,
   strategy: "movingAverage",
   backtestYears: 3,
@@ -409,6 +412,7 @@ const state = {
   portfolioRiskLoading: false,
   settings: { ...DEFAULT_SETTINGS, ...readJSON("hengce.settings.v1", {}) },
   updateInfo: null,
+  appVersion: "--",
   updateChecking: false,
   updateDownloading: false,
   updateDownloaded: false,
@@ -419,6 +423,8 @@ const state = {
 
 let stockSearchTimer = 0;
 let stockSearchRequest = 0;
+let holdingSearchTimer = 0;
+let holdingSearchRequest = 0;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -561,6 +567,42 @@ function renderStockSearchResults(results) {
       container.classList.add("hidden");
     })
   );
+}
+
+function renderHoldingSearchResults(results) {
+  const container = $("#holding-search-results");
+  container.innerHTML = results.length
+    ? results.map((item) => `
+        <button type="button" data-holding-code="${escapeHTML(item.code)}" data-holding-name="${escapeHTML(item.name)}">
+          <span><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(item.market || "A股")}</small></span>
+          <code>${escapeHTML(item.code)}</code>
+        </button>
+      `).join("")
+    : '<div class="stock-search-empty">未找到匹配的A股</div>';
+  container.classList.remove("hidden");
+  $$('[data-holding-code]').forEach((button) =>
+    button.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      $("#holding-stock-query").value = button.dataset.holdingCode;
+      $("#holding-form").elements.name.value = button.dataset.holdingName;
+      container.classList.add("hidden");
+    })
+  );
+}
+
+async function searchHoldingNames(query, { showEmpty = true } = {}) {
+  const request = ++holdingSearchRequest;
+  try {
+    const results = await window.hengce.search(query);
+    if (request !== holdingSearchRequest) return [];
+    if (results.length || showEmpty) renderHoldingSearchResults(results);
+    return results;
+  } catch {
+    if (request === holdingSearchRequest) {
+      $("#holding-search-results").classList.add("hidden");
+    }
+    return [];
+  }
 }
 
 async function searchStockNames(query, { showEmpty = true } = {}) {
@@ -1047,7 +1089,7 @@ function renderRecommendations() {
         .map((item, index) => {
           const scoreClass = item.score >= 75 ? "high" : "";
           return `
-            <tr>
+            <tr class="recommendation-row" data-code="${escapeHTML(item.code)}" tabindex="0" role="button" aria-label="分析 ${escapeHTML(item.name)} ${escapeHTML(item.code)}">
               <td>${index + 1}</td>
               <td>
                 <div class="stock-cell">
@@ -1081,10 +1123,10 @@ function renderRecommendations() {
               <td class="recommendation-reasons">${(item.reasons || []).map(escapeHTML).join(" · ") || "量价结构达到观察门槛"}</td>
               <td>
                 <div class="table-actions">
-                  <button class="secondary-button analyze-recommendation" data-code="${escapeHTML(item.code)}">分析</button>
                   <button class="table-action watch-recommendation" data-code="${escapeHTML(item.code)}" title="加入观察" ${dataFreshness.stale || state.watchlist.some((entry) => entry.code === item.code) ? "disabled" : ""}>
                     <i data-lucide="bell-plus"></i>
                   </button>
+                  <i class="recommendation-enter" data-lucide="chevron-right"></i>
                 </div>
               </td>
             </tr>
@@ -1092,14 +1134,19 @@ function renderRecommendations() {
         })
         .join("")
     : '<tr><td colspan="8" class="muted">当前筛选条件下没有可用标的</td></tr>';
-  $$(".analyze-recommendation").forEach((button) =>
-    button.addEventListener("click", () => {
-      const code = button.dataset.code;
-      $("#stock-code").value = code;
-      switchView("dashboard");
-      loadMarketData(code);
-    })
-  );
+  $$(".recommendation-row").forEach((row) => {
+    row.addEventListener("click", (event) => {
+      if (event.target.closest("button")) return;
+      analyzeStock(row.dataset.code);
+    });
+    row.addEventListener("keydown", (event) => {
+      if (event.target.closest("button")) return;
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        analyzeStock(row.dataset.code);
+      }
+    });
+  });
   $$(".watch-recommendation").forEach((button) =>
     button.addEventListener("click", () => {
       const item = allRows.find((entry) => entry.code === button.dataset.code);
@@ -1576,6 +1623,7 @@ function renderDashboard() {
     ? `当日分时 · ${state.intraday.at(-1)?.time?.slice(0, 10) || "等待数据"}`
     : `前复权日线 · ${state.bars.at(-1)?.date || "--"}`;
   $("#kline-range").classList.toggle("hidden", isIntraday);
+  $("#price-chart-wrap").classList.toggle("daily-chart", !isIntraday);
   $$("[data-chart-mode]").forEach((button) =>
     button.classList.toggle("active", button.dataset.chartMode === state.chartMode)
   );
@@ -1718,6 +1766,295 @@ function drawLineChart(canvas, points, options = {}) {
   return { xFor, yFor, points, pad, width, height };
 }
 
+function simpleMovingAverage(values, period) {
+  let sum = 0;
+  return values.map((value, index) => {
+    sum += value;
+    if (index >= period) sum -= values[index - period];
+    return index >= period - 1 ? sum / period : null;
+  });
+}
+
+function exponentialMovingAverage(values, period) {
+  const multiplier = 2 / (period + 1);
+  let current = null;
+  return values.map((value) => {
+    current = current == null ? value : value * multiplier + current * (1 - multiplier);
+    return current;
+  });
+}
+
+function kdjSeries(bars, period = 9) {
+  let k = 50;
+  let d = 50;
+  return bars.map((bar, index) => {
+    const windowBars = bars.slice(Math.max(0, index - period + 1), index + 1);
+    const lowest = Math.min(...windowBars.map((item) => item.low));
+    const highest = Math.max(...windowBars.map((item) => item.high));
+    const rsv = highest === lowest ? 50 : ((bar.close - lowest) / (highest - lowest)) * 100;
+    k = (2 * k + rsv) / 3;
+    d = (2 * d + k) / 3;
+    return { k, d, j: 3 * k - 2 * d };
+  });
+}
+
+function macdSeries(values) {
+  const fast = exponentialMovingAverage(values, 12);
+  const slow = exponentialMovingAverage(values, 26);
+  const dif = values.map((_, index) => fast[index] - slow[index]);
+  const dea = exponentialMovingAverage(dif, 9);
+  return dif.map((value, index) => ({
+    dif: value,
+    dea: dea[index],
+    histogram: (value - dea[index]) * 2
+  }));
+}
+
+function drawKLineChart(canvas, bars, range) {
+  const prepared = prepareCanvas(canvas);
+  const selected = bars.slice(-range);
+  if (!prepared || !selected.length) return null;
+  const { context, width, height } = prepared;
+  const startIndex = bars.length - selected.length;
+  const pad = { left: 12, right: 64, top: 26, bottom: 28 };
+  const plotWidth = width - pad.left - pad.right;
+  const panels = {
+    price: { top: 28, bottom: height * 0.53 },
+    volume: { top: height * 0.56, bottom: height * 0.68 },
+    kdj: { top: height * 0.71, bottom: height * 0.83 },
+    macd: { top: height * 0.86, bottom: height - pad.bottom }
+  };
+  const xFor = (index) =>
+    pad.left + ((index + 0.5) / selected.length) * plotWidth;
+  const closes = bars.map((bar) => bar.close);
+  const maDefinitions = [
+    { period: 5, color: "#2767ff" },
+    { period: 10, color: "#f29b18" },
+    { period: 20, color: "#ec4fa4" },
+    { period: 60, color: "#05aaa6" }
+  ].map((item) => ({
+    ...item,
+    values: simpleMovingAverage(closes, item.period).slice(startIndex)
+  }));
+  const priceValues = selected.flatMap((bar) => [bar.low, bar.high]);
+  maDefinitions.forEach((item) =>
+    priceValues.push(...item.values.filter(Number.isFinite))
+  );
+  let priceMinimum = Math.min(...priceValues);
+  let priceMaximum = Math.max(...priceValues);
+  const priceSpread = Math.max(priceMaximum - priceMinimum, priceMaximum * 0.03, 1);
+  priceMinimum -= priceSpread * 0.06;
+  priceMaximum += priceSpread * 0.08;
+  const yPrice = (value) =>
+    panels.price.top +
+    ((priceMaximum - value) / (priceMaximum - priceMinimum)) *
+      (panels.price.bottom - panels.price.top);
+
+  context.font = "10px -apple-system, sans-serif";
+  context.lineWidth = 1;
+  context.strokeStyle = "#e8ebee";
+  context.fillStyle = "#7b8590";
+  context.textBaseline = "middle";
+  context.textAlign = "left";
+  for (let index = 0; index <= 4; index += 1) {
+    const value = priceMinimum + ((priceMaximum - priceMinimum) * index) / 4;
+    const y = yPrice(value);
+    context.beginPath();
+    context.moveTo(pad.left, y);
+    context.lineTo(width - pad.right, y);
+    context.stroke();
+    context.fillText(number(value, 2), width - pad.right + 7, y);
+  }
+  const dateIndices = [0, 0.25, 0.5, 0.75, 1].map((fraction) =>
+    Math.min(selected.length - 1, Math.round((selected.length - 1) * fraction))
+  );
+  context.textAlign = "center";
+  context.textBaseline = "top";
+  for (const index of [...new Set(dateIndices)]) {
+    const x = xFor(index);
+    context.beginPath();
+    context.moveTo(x, panels.price.top);
+    context.lineTo(x, panels.macd.bottom);
+    context.stroke();
+    context.fillStyle = "#7b8590";
+    context.fillText(selected[index].date.slice(5), x, height - 20);
+  }
+
+  const drawLevel = (value, color, label) => {
+    if (!Number.isFinite(value)) return;
+    const y = yPrice(value);
+    context.save();
+    context.setLineDash([4, 4]);
+    context.strokeStyle = color;
+    context.beginPath();
+    context.moveTo(pad.left, y);
+    context.lineTo(width - pad.right, y);
+    context.stroke();
+    context.restore();
+    context.fillStyle = color;
+    context.textAlign = "left";
+    context.textBaseline = "bottom";
+    context.fillText(`${label} ${number(value)}`, pad.left + 4, y - 2);
+  };
+  drawLevel(state.analysis?.support, "#0d9c73", "支撑");
+  drawLevel(state.analysis?.pressure, "#c77d18", "压力");
+
+  const candleWidth = Math.max(2, Math.min(9, (plotWidth / selected.length) * 0.62));
+  selected.forEach((bar, index) => {
+    const x = xFor(index);
+    const rising = bar.close >= bar.open;
+    const color = rising ? "#ef3f33" : "#079566";
+    context.strokeStyle = color;
+    context.fillStyle = color;
+    context.beginPath();
+    context.moveTo(x, yPrice(bar.high));
+    context.lineTo(x, yPrice(bar.low));
+    context.stroke();
+    const bodyTop = yPrice(Math.max(bar.open, bar.close));
+    const bodyBottom = yPrice(Math.min(bar.open, bar.close));
+    const bodyHeight = Math.max(1, bodyBottom - bodyTop);
+    context.fillRect(x - candleWidth / 2, bodyTop, candleWidth, bodyHeight);
+  });
+
+  const drawSeries = (values, yFor, color, lineWidth = 1.2) => {
+    context.beginPath();
+    let drawing = false;
+    values.forEach((value, index) => {
+      if (!Number.isFinite(value)) {
+        drawing = false;
+        return;
+      }
+      const x = xFor(index);
+      const y = yFor(value);
+      if (!drawing) context.moveTo(x, y);
+      else context.lineTo(x, y);
+      drawing = true;
+    });
+    context.strokeStyle = color;
+    context.lineWidth = lineWidth;
+    context.stroke();
+  };
+  maDefinitions.forEach((item) => drawSeries(item.values, yPrice, item.color));
+  context.textAlign = "left";
+  context.textBaseline = "top";
+  context.fillStyle = "#59636e";
+  context.fillText("MA", pad.left, 7);
+  let legendX = pad.left + 22;
+  maDefinitions.forEach((item) => {
+    context.fillStyle = item.color;
+    const label = `MA${item.period}:${number(item.values.at(-1), 2)}`;
+    context.fillText(label, legendX, 7);
+    legendX += context.measureText(label).width + 10;
+  });
+
+  const maximumVolume = Math.max(...selected.map((bar) => bar.volume), 1);
+  selected.forEach((bar, index) => {
+    const barHeight =
+      (bar.volume / maximumVolume) * (panels.volume.bottom - panels.volume.top);
+    context.fillStyle = bar.close >= bar.open ? "#ef3f33" : "#079566";
+    context.fillRect(
+      xFor(index) - candleWidth / 2,
+      panels.volume.bottom - barHeight,
+      candleWidth,
+      barHeight
+    );
+  });
+  context.fillStyle = "#59636e";
+  context.textAlign = "left";
+  context.textBaseline = "top";
+  context.fillText(`VOL ${compactMoney(selected.at(-1).volume)}`, pad.left, panels.volume.top - 13);
+
+  const kdj = kdjSeries(bars).slice(startIndex);
+  const yKdj = (value) =>
+    panels.kdj.bottom -
+    ((Math.max(-20, Math.min(120, value)) + 20) / 140) *
+      (panels.kdj.bottom - panels.kdj.top);
+  context.strokeStyle = "#edf0f2";
+  [20, 80].forEach((value) => {
+    context.beginPath();
+    context.moveTo(pad.left, yKdj(value));
+    context.lineTo(width - pad.right, yKdj(value));
+    context.stroke();
+  });
+  drawSeries(kdj.map((item) => item.k), yKdj, "#2767ff");
+  drawSeries(kdj.map((item) => item.d), yKdj, "#f29b18");
+  drawSeries(kdj.map((item) => item.j), yKdj, "#ec4fa4");
+  const latestKdj = kdj.at(-1);
+  context.fillStyle = "#59636e";
+  context.fillText(
+    `KDJ  K:${number(latestKdj.k, 1)}  D:${number(latestKdj.d, 1)}  J:${number(latestKdj.j, 1)}`,
+    pad.left,
+    panels.kdj.top - 13
+  );
+
+  const macd = macdSeries(closes).slice(startIndex);
+  const macdLimit = Math.max(
+    ...macd.flatMap((item) => [Math.abs(item.dif), Math.abs(item.dea), Math.abs(item.histogram)]),
+    0.01
+  );
+  const yMacd = (value) =>
+    panels.macd.top +
+    ((macdLimit - value) / (macdLimit * 2)) *
+      (panels.macd.bottom - panels.macd.top);
+  context.strokeStyle = "#dfe3e7";
+  context.beginPath();
+  context.moveTo(pad.left, yMacd(0));
+  context.lineTo(width - pad.right, yMacd(0));
+  context.stroke();
+  macd.forEach((item, index) => {
+    const zero = yMacd(0);
+    const valueY = yMacd(item.histogram);
+    context.fillStyle = item.histogram >= 0 ? "#ef3f33" : "#079566";
+    context.fillRect(
+      xFor(index) - candleWidth / 2,
+      Math.min(zero, valueY),
+      candleWidth,
+      Math.max(1, Math.abs(zero - valueY))
+    );
+  });
+  drawSeries(macd.map((item) => item.dif), yMacd, "#2767ff");
+  drawSeries(macd.map((item) => item.dea), yMacd, "#f29b18");
+  const latestMacd = macd.at(-1);
+  context.fillStyle = "#59636e";
+  context.fillText(
+    `MACD  DIF:${number(latestMacd.dif, 2)}  DEA:${number(latestMacd.dea, 2)}  柱:${number(latestMacd.histogram, 2)}`,
+    pad.left,
+    panels.macd.top - 13
+  );
+
+  const hoverIndex = state.chartHoverIndex;
+  if (Number.isInteger(hoverIndex) && selected[hoverIndex]) {
+    const x = xFor(hoverIndex);
+    const y = yPrice(selected[hoverIndex].close);
+    context.save();
+    context.setLineDash([3, 3]);
+    context.strokeStyle = "rgba(72,82,92,0.65)";
+    context.beginPath();
+    context.moveTo(x, panels.price.top);
+    context.lineTo(x, panels.macd.bottom);
+    context.moveTo(pad.left, y);
+    context.lineTo(width - pad.right, y);
+    context.stroke();
+    context.restore();
+    context.fillStyle = "#343c45";
+    context.fillRect(width - pad.right, y - 9, pad.right, 18);
+    context.fillStyle = "#fff";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText(number(selected[hoverIndex].close), width - pad.right / 2, y);
+  }
+  return {
+    xFor,
+    yFor: yPrice,
+    points: selected.map((bar) => ({ date: bar.date, value: bar.close, bar })),
+    pad,
+    width,
+    height,
+    panels,
+    daily: true
+  };
+}
+
 function drawPriceChart() {
   if (state.chartMode === "intraday") {
     const points = state.intraday.map((point) => ({
@@ -1734,18 +2071,11 @@ function drawPriceChart() {
     });
     return;
   }
-  const selected = state.bars.slice(-state.chartRange);
-  const geometry = drawLineChart(
+  $("#price-chart")._geometry = drawKLineChart(
     $("#price-chart"),
-    selected.map((bar) => ({ date: bar.date, value: bar.close, bar })),
-    {
-      support: state.analysis?.support,
-      pressure: state.analysis?.pressure,
-      color: "#e23d3d",
-      fill: "rgba(226,61,61,0.16)"
-    }
+    state.bars,
+    state.chartRange
   );
-  $("#price-chart")._geometry = geometry;
 }
 
 let priceChartFrame = 0;
@@ -2080,7 +2410,14 @@ function fileSize(value) {
 
 function renderUpdate() {
   const info = state.updateInfo;
+  $("#sidebar-version").textContent = `v${info?.currentVersion || state.appVersion}`;
   $("#update-nav-badge").classList.toggle("hidden", !info?.available);
+  $("#sidebar-check-update").disabled = state.updateChecking || state.updateDownloading;
+  $("#sidebar-check-update").textContent = info?.available
+    ? "发现新版"
+    : state.updateChecking
+      ? "检查中…"
+      : "检查更新";
   $("#update-version").textContent = info
     ? `当前 ${info.currentVersion} · 最新 ${info.latestVersion}`
     : "等待版本检查";
@@ -2243,6 +2580,7 @@ function bindEvents() {
   $$("[data-chart-mode]").forEach((button) =>
     button.addEventListener("click", () => {
       state.chartMode = button.dataset.chartMode;
+      state.chartHoverIndex = null;
       renderDashboard();
     })
   );
@@ -2251,6 +2589,7 @@ function bindEvents() {
       $$("[data-range]").forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
       state.chartRange = Number(button.dataset.range);
+      state.chartHoverIndex = null;
       schedulePriceChart();
     })
   );
@@ -2282,6 +2621,10 @@ function bindEvents() {
     state.updateProgress = progress;
     renderUpdate();
   });
+  $("#sidebar-check-update").addEventListener("click", () => {
+    switchView("settings");
+    checkForUpdates();
+  });
   $$(".source-links button").forEach((button) =>
     button.addEventListener("click", () =>
       window.hengce.openExternal(button.dataset.url)
@@ -2291,20 +2634,30 @@ function bindEvents() {
   const dialog = $("#holding-dialog");
   $("#add-holding").addEventListener("click", () => {
     $("#holding-form").reset();
+    $("#holding-search-results").classList.add("hidden");
     dialog.showModal();
+    $("#holding-stock-query").focus();
   });
   $("#close-dialog").addEventListener("click", () => dialog.close());
   $("#holding-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
-    const code = String(form.elements.code.value).trim();
+    const query = String(form.elements.code.value).trim();
+    let code = query;
     const shares = Number(form.elements.shares.value);
     const cost = Number(form.elements.cost.value);
+    let name = String(form.elements.name.value).trim();
+    if (!/^\d{6}$/.test(code) && query) {
+      const matches = await searchHoldingNames(query, { showEmpty: false });
+      if (matches[0]) {
+        code = matches[0].code;
+        if (!name) name = matches[0].name;
+      }
+    }
     if (!/^\d{6}$/.test(code) || shares <= 0 || cost <= 0) {
       showToast("请检查股票代码、股数和成本");
       return;
     }
-    let name = String(form.elements.name.value).trim();
     if (!name) {
       try {
         const quote = await window.hengce.quote(code);
@@ -2325,6 +2678,19 @@ function bindEvents() {
     updateHoldingQuotes();
     showToast("持仓记录已保存在本机");
   });
+  const holdingStockQuery = $("#holding-stock-query");
+  holdingStockQuery.addEventListener("input", (event) => {
+    const query = event.currentTarget.value.trim();
+    clearTimeout(holdingSearchTimer);
+    if (!query) {
+      $("#holding-search-results").classList.add("hidden");
+      return;
+    }
+    holdingSearchTimer = setTimeout(() => searchHoldingNames(query), 180);
+  });
+  holdingStockQuery.addEventListener("blur", () =>
+    setTimeout(() => $("#holding-search-results").classList.add("hidden"), 120)
+  );
 
   const priceCanvas = $("#price-chart");
   priceCanvas.addEventListener("mousemove", (event) => {
@@ -2342,15 +2708,23 @@ function bindEvents() {
     if (!point?.bar && !point?.intraday) return;
     const tooltip = $("#chart-tooltip");
     tooltip.innerHTML = point.bar
-      ? `<strong>${point.bar.date}</strong><br>开 ${number(point.bar.open)}　收 ${number(point.bar.close)}<br>高 ${number(point.bar.high)}　低 ${number(point.bar.low)}`
+      ? `<strong>${point.bar.date}</strong><br>开 ${number(point.bar.open)}　收 ${number(point.bar.close)}<br>高 ${number(point.bar.high)}　低 ${number(point.bar.low)}<br>涨跌 ${percent(point.bar.percentChange)}　量 ${compactMoney(point.bar.volume)}`
       : `<strong>${escapeHTML(point.intraday.time)}</strong><br>价格 ${number(point.intraday.price)}<br>均价 ${number(point.intraday.averagePrice)}`;
+    if (geometry.daily) {
+      state.chartHoverIndex = index;
+      schedulePriceChart();
+    }
     tooltip.style.left = `${Math.min(bounds.width - 145, Math.max(6, x + 12))}px`;
     tooltip.style.top = `${Math.max(8, event.clientY - bounds.top - 60)}px`;
     tooltip.classList.remove("hidden");
   });
-  priceCanvas.addEventListener("mouseleave", () =>
-    $("#chart-tooltip").classList.add("hidden")
-  );
+  priceCanvas.addEventListener("mouseleave", () => {
+    $("#chart-tooltip").classList.add("hidden");
+    if (state.chartHoverIndex != null) {
+      state.chartHoverIndex = null;
+      schedulePriceChart();
+    }
+  });
   const chartResizeObserver = new ResizeObserver((entries) => {
     if (entries.some((entry) => entry.target.contains(priceCanvas))) {
       schedulePriceChart();
@@ -2368,6 +2742,10 @@ function bindEvents() {
 populateSettings();
 bindEvents();
 renderUpdate();
+window.hengce.appVersion().then((version) => {
+  state.appVersion = version;
+  renderUpdate();
+}).catch(() => {});
 renderHoldings();
 renderWatchlist();
 renderPortfolioRisk();
