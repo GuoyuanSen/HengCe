@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, net, Notification, shell } = require("electron");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const {
   INDEX_DEFINITIONS,
   parseTencentKLines,
@@ -33,6 +34,11 @@ const {
   scanWindow,
   validateOvernightProxy
 } = require("./overnight.js");
+const {
+  buildUpdateModel,
+  parseChecksum,
+  publicUpdateModel
+} = require("./updater.js");
 
 const APP_ID = "com.guoyuansen.hengce";
 const FRIENDLY_MARKET_ERROR = "行情服务暂时无响应，请检查网络后重试。";
@@ -40,6 +46,10 @@ const TENCENT_HEADERS = {
   Accept: "*/*",
   Referer: "https://stockapp.finance.qq.com/"
 };
+const RELEASE_API_URL =
+  "https://api.github.com/repos/GuoyuanSen/HengCe/releases/latest";
+let downloadedUpdate = null;
+let updateDownloadActive = false;
 
 function sleep(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -678,6 +688,135 @@ async function fetchStockProfile(rawCode) {
   };
 }
 
+async function latestUpdateModel() {
+  const release = await requestJSON(RELEASE_API_URL, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    }
+  });
+  return buildUpdateModel(
+    release,
+    app.getVersion(),
+    process.platform,
+    process.arch
+  );
+}
+
+async function checkForUpdate() {
+  return publicUpdateModel(await latestUpdateModel());
+}
+
+async function sha256File(file) {
+  const hash = crypto.createHash("sha256");
+  await new Promise((resolve, reject) => {
+    const input = fs.createReadStream(file);
+    input.on("data", (chunk) => hash.update(chunk));
+    input.on("error", reject);
+    input.on("end", resolve);
+  });
+  return hash.digest("hex");
+}
+
+async function downloadResponse(response, destination, sender) {
+  if (!response.ok || !response.body) {
+    throw new Error(`更新下载失败（${response.status}）`);
+  }
+  const temporary = `${destination}.part`;
+  fs.rmSync(temporary, { force: true });
+  const file = await fs.promises.open(temporary, "w");
+  const reader = response.body.getReader();
+  const total = Number(response.headers.get("content-length") || 0);
+  let received = 0;
+  let failure = null;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value);
+      let offset = 0;
+      while (offset < chunk.length) {
+        const { bytesWritten } = await file.write(
+          chunk,
+          offset,
+          chunk.length - offset
+        );
+        if (!bytesWritten) throw new Error("新版安装包写入中断");
+        offset += bytesWritten;
+      }
+      received += chunk.length;
+      if (!sender.isDestroyed()) {
+        sender.send("system:update-progress", {
+          received,
+          total,
+          percent: total ? Math.min(100, Math.round((received / total) * 100)) : null
+        });
+      }
+    }
+  } catch (error) {
+    failure = error;
+  } finally {
+    await file.close();
+  }
+  if (failure) {
+    fs.rmSync(temporary, { force: true });
+    throw failure;
+  }
+  fs.rmSync(destination, { force: true });
+  await fs.promises.rename(temporary, destination);
+}
+
+async function downloadLatestUpdate(sender) {
+  if (updateDownloadActive) throw new Error("新版安装包正在下载");
+  updateDownloadActive = true;
+  try {
+    const model = await latestUpdateModel();
+    if (!model.available) throw new Error("当前没有可下载的新版本");
+    const checksumText = await requestData(model._checksumUrl, {
+      headers: { Accept: "text/plain" }
+    });
+    const expectedChecksum = parseChecksum(checksumText, model.assetName);
+    if (!expectedChecksum) throw new Error("新版安装包校验文件无效");
+
+    const directory = path.join(
+      app.getPath("downloads"),
+      "HengCe Updates",
+      model.tagName
+    );
+    fs.mkdirSync(directory, { recursive: true });
+    const destination = path.join(directory, path.basename(model.assetName));
+    const response = await net.fetch(model._assetUrl, {
+      headers: { Accept: "application/octet-stream" }
+    });
+    await downloadResponse(response, destination, sender);
+    const actualChecksum = await sha256File(destination);
+    if (actualChecksum !== expectedChecksum) {
+      fs.rmSync(destination, { force: true });
+      throw new Error("新版安装包完整性校验失败，文件已删除");
+    }
+    downloadedUpdate = { path: destination, model };
+    return {
+      ...publicUpdateModel(model),
+      downloaded: true,
+      fileName: path.basename(destination)
+    };
+  } finally {
+    updateDownloadActive = false;
+  }
+}
+
+async function installDownloadedUpdate() {
+  if (!downloadedUpdate || !fs.existsSync(downloadedUpdate.path)) {
+    throw new Error("请先下载并校验新版安装包");
+  }
+  const error = await shell.openPath(downloadedUpdate.path);
+  if (error) throw new Error(`无法打开新版安装包：${error}`);
+  if (process.platform === "win32") {
+    setTimeout(() => app.quit(), 1500);
+  }
+  return { opened: true, willQuit: process.platform === "win32" };
+}
+
 function createWindow() {
   const isMac = process.platform === "darwin";
   const window = new BrowserWindow({
@@ -748,6 +887,11 @@ app.whenReady().then(() => {
     if (/^https:\/\//.test(url)) return shell.openExternal(url);
     return false;
   });
+  ipcMain.handle("system:update-check", () => checkForUpdate());
+  ipcMain.handle("system:update-download", (event) =>
+    downloadLatestUpdate(event.sender)
+  );
+  ipcMain.handle("system:update-install", () => installDownloadedUpdate());
 
   createWindow();
   app.on("activate", () => {

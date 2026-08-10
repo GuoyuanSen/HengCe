@@ -146,3 +146,15 @@ test("Windows uses its native titlebar and compact sidebar spacing", () => {
   assert.match(styles, /html\[data-platform="win32"\] \.sidebar[\s\S]*?padding-top:\s*8px/);
   assert.match(styles, /html\[data-platform="win32"\] \.toolbar[\s\S]*?-webkit-app-region:\s*no-drag/);
 });
+
+test("settings expose verified in-app release updates", () => {
+  assert.match(html, /id="check-update"/);
+  assert.match(html, /id="download-update"/);
+  assert.match(html, /id="install-update"/);
+  assert.match(preload, /checkForUpdate:\s*\(\)/);
+  assert.match(preload, /onUpdateProgress/);
+  assert.match(main, /ipcMain\.handle\("system:update-check"/);
+  assert.match(main, /ipcMain\.handle\("system:update-download"/);
+  assert.match(main, /parseChecksum/);
+  assert.match(renderer, /checkForUpdates\(\{ silent: true \}\)/);
+});

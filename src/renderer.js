@@ -301,7 +301,22 @@ if (!window.hengce && isBrowserPreview) {
       asOf: new Date().toISOString()
     }),
     notify: async () => true,
-    openExternal: async (url) => window.open(url, "_blank")
+    openExternal: async (url) => window.open(url, "_blank"),
+    checkForUpdate: async () => ({
+      currentVersion: "0.3.2",
+      latestVersion: "0.3.3",
+      tagName: "v0.3.3",
+      releaseName: "衡策 v0.3.3",
+      releaseNotes: "新增应用内更新检查、下载进度和 SHA-256 完整性校验。",
+      assetName: "HengCe-Apple-Silicon.dmg",
+      assetSize: 136e6,
+      supported: true,
+      downloadable: true,
+      available: true
+    }),
+    downloadUpdate: async () => ({ downloaded: true, fileName: "HengCe-Apple-Silicon.dmg" }),
+    installUpdate: async () => ({ opened: true, willQuit: false }),
+    onUpdateProgress: () => () => {}
   };
 }
 
@@ -322,7 +337,11 @@ if (!window.hengce) {
     overnight: unavailable,
     profile: unavailable,
     notify: async () => false,
-    openExternal: unavailable
+    openExternal: unavailable,
+    checkForUpdate: unavailable,
+    downloadUpdate: unavailable,
+    installUpdate: unavailable,
+    onUpdateProgress: () => () => {}
   };
 }
 
@@ -389,6 +408,12 @@ const state = {
   portfolioRisk: null,
   portfolioRiskLoading: false,
   settings: { ...DEFAULT_SETTINGS, ...readJSON("hengce.settings.v1", {}) },
+  updateInfo: null,
+  updateChecking: false,
+  updateDownloading: false,
+  updateDownloaded: false,
+  updateProgress: null,
+  updateMessage: "启动后会自动检查 GitHub Release 的正式版本",
   loading: false
 };
 
@@ -2045,6 +2070,99 @@ function saveSettings() {
   renderBacktest();
 }
 
+function fileSize(value) {
+  const bytes = Number(value || 0);
+  if (!bytes) return "--";
+  if (bytes >= 1024 ** 3) return `${number(bytes / 1024 ** 3, 1)} GB`;
+  if (bytes >= 1024 ** 2) return `${number(bytes / 1024 ** 2, 1)} MB`;
+  return `${number(bytes / 1024, 1)} KB`;
+}
+
+function renderUpdate() {
+  const info = state.updateInfo;
+  $("#update-nav-badge").classList.toggle("hidden", !info?.available);
+  $("#update-version").textContent = info
+    ? `当前 ${info.currentVersion} · 最新 ${info.latestVersion}`
+    : "等待版本检查";
+  $("#update-status").textContent = state.updateMessage;
+  $("#check-update").disabled = state.updateChecking || state.updateDownloading;
+  $("#check-update").textContent = state.updateChecking ? "检查中…" : "检查更新";
+  $("#download-update").classList.toggle(
+    "hidden",
+    !info?.available || state.updateDownloaded
+  );
+  $("#download-update").disabled = state.updateDownloading;
+  $("#download-update").textContent = state.updateDownloading
+    ? "下载中…"
+    : `下载新版${info?.assetSize ? ` · ${fileSize(info.assetSize)}` : ""}`;
+  $("#install-update").classList.toggle("hidden", !state.updateDownloaded);
+  const progress = $("#update-progress");
+  progress.classList.toggle("hidden", !state.updateDownloading);
+  const percent = state.updateProgress?.percent;
+  $("#update-progress-bar").style.width = `${percent ?? 4}%`;
+  $("#update-progress-label").textContent = percent == null
+    ? `已下载 ${fileSize(state.updateProgress?.received)}`
+    : `${percent}%`;
+  const notes = $("#update-notes");
+  const releaseNotes = info?.releaseNotes || "";
+  notes.classList.toggle("hidden", !releaseNotes);
+  $("#update-notes-content").textContent = releaseNotes;
+}
+
+async function checkForUpdates({ silent = false } = {}) {
+  if (state.updateChecking || state.updateDownloading) return;
+  state.updateChecking = true;
+  if (!silent) state.updateMessage = "正在连接 GitHub 检查正式版本…";
+  renderUpdate();
+  try {
+    state.updateInfo = await window.hengce.checkForUpdate();
+    if (!state.updateInfo.supported) {
+      state.updateMessage = "当前系统架构暂不支持应用内下载，请前往 Release 页面更新。";
+    } else if (state.updateInfo.available) {
+      state.updateMessage = `发现新版 ${state.updateInfo.latestVersion}，安装包将先校验 SHA-256。`;
+      if (silent) showToast(`发现衡策 ${state.updateInfo.latestVersion} 新版本`);
+    } else {
+      state.updateMessage = "当前已经是最新正式版本。";
+    }
+  } catch (error) {
+    state.updateMessage = `检查更新失败：${friendlyMarketError(error)}`;
+  } finally {
+    state.updateChecking = false;
+    renderUpdate();
+  }
+}
+
+async function downloadUpdate() {
+  if (state.updateDownloading) return;
+  state.updateDownloading = true;
+  state.updateProgress = { received: 0, total: state.updateInfo?.assetSize || 0, percent: 0 };
+  state.updateMessage = "正在下载新版安装包，请保持应用运行…";
+  renderUpdate();
+  try {
+    await window.hengce.downloadUpdate();
+    state.updateDownloaded = true;
+    state.updateMessage = "下载与 SHA-256 校验完成，可以打开安装包。";
+  } catch (error) {
+    state.updateMessage = `下载失败：${friendlyMarketError(error)}`;
+  } finally {
+    state.updateDownloading = false;
+    renderUpdate();
+  }
+}
+
+async function installUpdate() {
+  try {
+    const result = await window.hengce.installUpdate();
+    state.updateMessage = result.willQuit
+      ? "安装程序已启动，应用即将退出。"
+      : "新版安装映像已打开，请按系统提示完成替换。";
+    renderUpdate();
+  } catch (error) {
+    state.updateMessage = `无法打开安装包：${friendlyMarketError(error)}`;
+    renderUpdate();
+  }
+}
+
 function switchView(view) {
   $$(".nav-item").forEach((button) =>
     button.classList.toggle("active", button.dataset.view === view)
@@ -2157,6 +2275,13 @@ function bindEvents() {
     renderBacktest();
     showToast("回测参数已恢复默认");
   });
+  $("#check-update").addEventListener("click", () => checkForUpdates());
+  $("#download-update").addEventListener("click", downloadUpdate);
+  $("#install-update").addEventListener("click", installUpdate);
+  window.hengce.onUpdateProgress((progress) => {
+    state.updateProgress = progress;
+    renderUpdate();
+  });
   $$(".source-links button").forEach((button) =>
     button.addEventListener("click", () =>
       window.hengce.openExternal(button.dataset.url)
@@ -2242,6 +2367,7 @@ function bindEvents() {
 
 populateSettings();
 bindEvents();
+renderUpdate();
 renderHoldings();
 renderWatchlist();
 renderPortfolioRisk();
@@ -2249,3 +2375,4 @@ refreshIcons();
 updateOvernightClock();
 setInterval(updateOvernightClock, 1000);
 loadMarketData(state.code);
+checkForUpdates({ silent: true });

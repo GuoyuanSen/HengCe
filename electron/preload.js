@@ -15,5 +15,13 @@ contextBridge.exposeInMainWorld("hengce", {
   overnight: () => ipcRenderer.invoke("market:overnight"),
   profile: (code) => ipcRenderer.invoke("market:profile", code),
   notify: (title, body) => ipcRenderer.invoke("system:notify", title, body),
-  openExternal: (url) => ipcRenderer.invoke("system:open-external", url)
+  openExternal: (url) => ipcRenderer.invoke("system:open-external", url),
+  checkForUpdate: () => ipcRenderer.invoke("system:update-check"),
+  downloadUpdate: () => ipcRenderer.invoke("system:update-download"),
+  installUpdate: () => ipcRenderer.invoke("system:update-install"),
+  onUpdateProgress: (callback) => {
+    const listener = (_event, progress) => callback(progress);
+    ipcRenderer.on("system:update-progress", listener);
+    return () => ipcRenderer.removeListener("system:update-progress", listener);
+  }
 });

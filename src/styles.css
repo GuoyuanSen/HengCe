@@ -1932,6 +1932,97 @@ tbody tr:hover {
   border-bottom: 1px solid var(--line);
 }
 
+.update-section {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 14px;
+  margin-top: 20px;
+  padding: 17px 18px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+}
+
+.update-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--blue);
+  background: rgba(46, 109, 230, 0.1);
+}
+
+.update-icon svg {
+  width: 18px;
+}
+
+.update-copy {
+  min-width: 0;
+}
+
+.update-title {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.update-title span,
+.update-copy > p,
+.update-progress small,
+.update-notes {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.update-copy > p {
+  margin-top: 5px;
+}
+
+.update-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.update-progress {
+  display: grid;
+  grid-template-columns: minmax(120px, 260px) auto;
+  align-items: center;
+  gap: 9px;
+  margin-top: 10px;
+}
+
+.update-progress > span {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #e6e9ed;
+}
+
+.update-progress i {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--blue);
+  transition: width 160ms ease;
+}
+
+.update-notes {
+  margin-top: 10px;
+}
+
+.update-notes summary {
+  cursor: pointer;
+  color: var(--blue);
+}
+
+.update-notes p {
+  max-width: 760px;
+  margin-top: 7px;
+  white-space: pre-wrap;
+}
+
 fieldset {
   display: grid;
   gap: 13px;
