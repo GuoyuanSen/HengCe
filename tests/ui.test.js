@@ -25,10 +25,13 @@ test("stock code input stays outside the draggable titlebar", () => {
   );
 });
 
-test("stock code input replaces the default and accepts six digits", () => {
-  assert.match(html, /id="stock-code"[\s\S]*?maxlength="6"/);
+test("stock search accepts codes and fuzzy Chinese names", () => {
+  assert.match(html, /id="stock-code"[\s\S]*?placeholder="输入股票代码或名称"/);
+  assert.match(html, /id="stock-search-results"/);
+  assert.match(preload, /search:\s*\(query\)/);
+  assert.match(main, /ipcMain\.handle\("market:search"/);
   assert.match(renderer, /stockCodeInput\.addEventListener\("focus"/);
-  assert.match(renderer, /replace\(\/\\D\/g, ""\)\.slice\(0, 6\)/);
+  assert.match(renderer, /function searchStockNames/);
 });
 
 test("demo quotes are limited to browser previews", () => {
@@ -65,6 +68,21 @@ test("daily hotspots are a standalone lazy-loaded view", () => {
   assert.match(renderer, /if \(view === "hotspots"\) loadHotspots\(\)/);
   assert.match(renderer, /window\.hengce\.hotspots\(\)/);
   assert.match(renderer, /不等同于真实机构持仓变化/);
+});
+
+test("hotspot boards expand inline and stocks open the analysis view", () => {
+  assert.match(preload, /boardMembers:\s*\(boardCode\)/);
+  assert.match(main, /ipcMain\.handle\("market:board-members"/);
+  assert.match(renderer, /function toggleHotspotBoard/);
+  assert.match(renderer, /class="hotspot-members-row"/);
+  assert.match(renderer, /function analyzeStock/);
+});
+
+test("analysis supports intraday and daily chart modes", () => {
+  assert.match(preload, /intraday:\s*\(code\)/);
+  assert.match(main, /ipcMain\.handle\("market:intraday"/);
+  assert.match(html, /data-chart-mode="intraday"/);
+  assert.match(html, /id="trade-plan"/);
 });
 
 test("A-share recommendations are a standalone lazy-loaded view", () => {

@@ -73,15 +73,15 @@
             <i data-lucide="search"></i>
             <input
               id="stock-code"
-              inputmode="numeric"
-              maxlength="6"
+              maxlength="20"
               value="603039"
               autocomplete="off"
               spellcheck="false"
-              aria-label="股票代码"
-              placeholder="输入6位A股代码"
+              aria-label="股票代码或名称"
+              placeholder="输入股票代码或名称"
             >
             <kbd>↵</kbd>
+            <div id="stock-search-results" class="stock-search-results hidden"></div>
           </div>
           <button id="analyze-button" class="primary-button">
             <span>分析</span>
@@ -156,12 +156,19 @@
                   <h2>价格趋势</h2>
                   <span id="chart-caption">前复权日线</span>
                 </div>
-                <div class="segmented" aria-label="图表区间">
-                  <button data-range="60">60日</button>
-                  <button class="active" data-range="120">120日</button>
-                  <button data-range="250">250日</button>
+                <div class="chart-controls">
+                  <div class="segmented" aria-label="走势图类型">
+                    <button class="active" data-chart-mode="intraday">今日分时</button>
+                    <button data-chart-mode="daily">日 K</button>
+                  </div>
+                  <div id="kline-range" class="segmented hidden" aria-label="日K区间">
+                    <button data-range="60">60日</button>
+                    <button class="active" data-range="120">120日</button>
+                    <button data-range="250">250日</button>
+                  </div>
                 </div>
               </div>
+              <div id="trade-plan" class="trade-plan"></div>
               <div class="chart-wrap">
                 <canvas id="price-chart"></canvas>
                 <div id="chart-tooltip" class="chart-tooltip hidden"></div>

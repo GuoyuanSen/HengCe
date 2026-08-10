@@ -63,6 +63,11 @@ if (!window.hengce && isBrowserPreview) {
     })
   );
   window.hengce = {
+    search: async (query) => [
+      { code: "603039", name: "泛微网络", market: "沪A" },
+      { code: "002475", name: "立讯精密", market: "深A" },
+      { code: "600570", name: "恒生电子", market: "沪A" }
+    ].filter((item) => item.code.includes(query) || item.name.includes(query)),
     quote: async (code) => ({
       code,
       name: code === "603039" ? "泛微网络" : "演示标的",
@@ -158,6 +163,28 @@ if (!window.hengce && isBrowserPreview) {
       threeDayFlow: [...demoHotspotRows].sort(
         (left, right) => right.netFlow3Day - left.netFlow3Day
       )
+    }),
+    boardMembers: async (boardCode) => ({
+      boardCode,
+      asOf: new Date().toISOString(),
+      members: [
+        ["603039", "泛微网络", 4.72, 3.31, 4.8e8, 6.2, 1.45, 6.7e7],
+        ["002475", "立讯精密", 43.18, 2.84, 18.6e8, 3.8, 1.21, 1.9e8],
+        ["600570", "恒生电子", 31.26, 2.16, 12.2e8, 4.1, 1.18, 9.4e7]
+      ].map(([code, name, price, changePercent, amount, turnoverRate, volumeRatio, todayNetFlow]) => ({
+        code, name, price, changePercent, amount, turnoverRate, volumeRatio, todayNetFlow
+      }))
+    }),
+    intraday: async () => Array.from({ length: 48 }, (_, index) => {
+      const minutes = 30 + index * 5;
+      const hour = 9 + Math.floor(minutes / 60);
+      const minute = minutes % 60;
+      const price = last.open + Math.sin(index / 5) * 0.45 + index * 0.012;
+      return {
+        time: `${last.date} ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+        price,
+        averagePrice: last.open + index * 0.006
+      };
     }),
     recommendations: async () => ({
       asOf: new Date().toISOString(),
@@ -283,11 +310,14 @@ if (!window.hengce) {
     throw new Error("应用接口初始化失败，请重新启动或重新安装衡策。");
   };
   window.hengce = {
+    search: unavailable,
     quote: unavailable,
     klines: unavailable,
     indices: unavailable,
     valuation: unavailable,
     hotspots: unavailable,
+    boardMembers: unavailable,
+    intraday: unavailable,
     recommendations: unavailable,
     overnight: unavailable,
     profile: unavailable,
@@ -325,6 +355,10 @@ const state = {
   hotspotsLoading: false,
   hotspotsError: "",
   hotspotMode: "composite",
+  expandedHotspotBoard: null,
+  hotspotMembers: new Map(),
+  hotspotMembersLoading: new Set(),
+  hotspotMembersErrors: new Map(),
   recommendations: null,
   recommendationsLoading: false,
   recommendationsError: "",
@@ -343,6 +377,8 @@ const state = {
   watchlistLoading: false,
   watchlistError: "",
   analysis: null,
+  intraday: [],
+  chartMode: "intraday",
   chartRange: 120,
   strategy: "movingAverage",
   backtestYears: 3,
@@ -355,6 +391,9 @@ const state = {
   settings: { ...DEFAULT_SETTINGS, ...readJSON("hengce.settings.v1", {}) },
   loading: false
 };
+
+let stockSearchTimer = 0;
+let stockSearchRequest = 0;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -479,6 +518,54 @@ function friendlyMarketError(error) {
   return message;
 }
 
+function renderStockSearchResults(results) {
+  const container = $("#stock-search-results");
+  container.innerHTML = results.length
+    ? results.map((item) => `
+        <button type="button" data-search-code="${escapeHTML(item.code)}">
+          <span><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(item.market || "A股")}</small></span>
+          <code>${escapeHTML(item.code)}</code>
+        </button>
+      `).join("")
+    : '<div class="stock-search-empty">未找到匹配的A股</div>';
+  container.classList.remove("hidden");
+  $$('[data-search-code]').forEach((button) =>
+    button.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      analyzeStock(button.dataset.searchCode);
+      container.classList.add("hidden");
+    })
+  );
+}
+
+async function searchStockNames(query, { showEmpty = true } = {}) {
+  const request = ++stockSearchRequest;
+  try {
+    const results = await window.hengce.search(query);
+    if (request !== stockSearchRequest) return [];
+    if (results.length || showEmpty) renderStockSearchResults(results);
+    return results;
+  } catch {
+    if (request === stockSearchRequest) $("#stock-search-results").classList.add("hidden");
+    return [];
+  }
+}
+
+async function submitStockSearch() {
+  const query = $("#stock-code").value.trim();
+  if (/^\d{6}$/.test(query)) {
+    loadMarketData(query);
+    return;
+  }
+  if (!query) {
+    showError("请输入股票代码或名称。");
+    return;
+  }
+  const results = await searchStockNames(query);
+  if (results[0]) analyzeStock(results[0].code);
+  else showError("未找到匹配的A股，请换一个名称或输入6位代码。");
+}
+
 async function loadMarketData(code = $("#stock-code").value) {
   const normalized = String(code).trim().toLowerCase().replace(/^sh|^sz/, "");
   if (!/^\d{6}$/.test(normalized)) {
@@ -487,6 +574,8 @@ async function loadMarketData(code = $("#stock-code").value) {
   }
 
   state.code = normalized;
+  state.intraday = [];
+  state.chartMode = "intraday";
   state.valuation = null;
   state.valuationLoading = true;
   $("#stock-code").value = normalized;
@@ -495,6 +584,7 @@ async function loadMarketData(code = $("#stock-code").value) {
   renderValuation();
   try {
     const indicesRequest = window.hengce.indices().catch(() => []);
+    const intradayRequest = window.hengce.intraday(normalized).catch(() => []);
     const valuationRequest = window.hengce
       .valuation(normalized)
       .catch((error) => ({ error: friendlyMarketError(error) }));
@@ -511,6 +601,11 @@ async function loadMarketData(code = $("#stock-code").value) {
     renderBacktest();
     renderIndices();
     renderHoldings();
+    intradayRequest.then((points) => {
+      if (state.code !== normalized) return;
+      state.intraday = points;
+      renderDashboard();
+    });
     indicesRequest.then((indices) => {
       state.indices = indices;
       renderIndices();
@@ -737,14 +832,31 @@ function renderHotspots() {
         .map((item, index) => {
           const scoreClass =
             item.score >= 75 ? "high" : item.score < 45 ? "low" : "";
+          const expanded = state.expandedHotspotBoard === item.code;
+          const members = state.hotspotMembers.get(item.code);
+          const loadingMembers = state.hotspotMembersLoading.has(item.code);
+          const membersError = state.hotspotMembersErrors.get(item.code);
+          const memberContent = loadingMembers
+            ? '<div class="hotspot-members-status"><span class="spinner"></span>正在读取板块成分股</div>'
+            : membersError
+              ? `<div class="hotspot-members-status error-text">${escapeHTML(membersError)}</div>`
+              : `<div class="hotspot-members-grid">${(members || []).map((member) => `
+                  <button class="hotspot-member" data-analyze-code="${escapeHTML(member.code)}">
+                    <span><strong>${escapeHTML(member.name)}</strong><small>${escapeHTML(member.code)}</small></span>
+                    <span><strong class="${directionClass(member.changePercent)}">${percent(member.changePercent)}</strong><small>${number(member.price)} 元</small></span>
+                    <span><small>成交额</small><strong>${compactMoney(member.amount)}</strong></span>
+                    <span><small>量比 / 换手</small><strong>${number(member.volumeRatio)} / ${plainPercent(member.turnoverRate)}</strong></span>
+                    <span class="member-action">查看分析 <i data-lucide="arrow-right"></i></span>
+                  </button>
+                `).join("")}</div>`;
           return `
-            <tr>
+            <tr class="hotspot-board-row ${expanded ? "expanded" : ""}" data-board-code="${escapeHTML(item.code)}">
               <td>${index + 1}</td>
               <td>
-                <div class="hotspot-board">
-                  <strong>${escapeHTML(item.name)}</strong>
-                  <small>${escapeHTML(item.code)}</small>
-                </div>
+                <button class="hotspot-board hotspot-board-toggle" data-board-code="${escapeHTML(item.code)}" aria-expanded="${expanded}">
+                  <span><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(item.code)}</small></span>
+                  <i data-lucide="chevron-${expanded ? "up" : "down"}"></i>
+                </button>
               </td>
               <td><span class="hotspot-type">${escapeHTML(item.type)}</span></td>
               <td>
@@ -760,12 +872,10 @@ function renderHotspots() {
               <td class="${directionClass(item.netFlow3Day)}">${compactMoney(item.netFlow3Day)}</td>
               <td>${number(item.upCount, 0)} / ${number(item.downCount, 0)}</td>
               <td>
-                <div class="hotspot-leader">
-                  <strong>${escapeHTML(item.leaderName || "--")}</strong>
-                  <small class="${directionClass(item.leaderChangePercent)}">${percent(item.leaderChangePercent)}</small>
-                </div>
+                ${item.leaderCode && /^\d{6}$/.test(item.leaderCode) ? `<button class="hotspot-leader hotspot-leader-button" data-analyze-code="${escapeHTML(item.leaderCode)}"><strong>${escapeHTML(item.leaderName || "--")}</strong><small class="${directionClass(item.leaderChangePercent)}">${percent(item.leaderChangePercent)} · 分析</small></button>` : `<div class="hotspot-leader"><strong>${escapeHTML(item.leaderName || "--")}</strong><small class="${directionClass(item.leaderChangePercent)}">${percent(item.leaderChangePercent)}</small></div>`}
               </td>
             </tr>
+            ${expanded ? `<tr class="hotspot-members-row"><td colspan="9">${memberContent}</td></tr>` : ""}
           `;
         })
         .join("")
@@ -781,6 +891,45 @@ function renderHotspots() {
       });
   $("#hotspots-note").textContent =
     `数据时间 ${timestamp} · ${sourceDetail}。主力资金为公开行情口径，不等同于真实机构持仓变化，不构成买入建议。`;
+  $$(".hotspot-board-toggle").forEach((button) =>
+    button.addEventListener("click", () => toggleHotspotBoard(button.dataset.boardCode))
+  );
+  $$('[data-analyze-code]').forEach((button) =>
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      analyzeStock(button.dataset.analyzeCode);
+    })
+  );
+  refreshIcons();
+}
+
+async function toggleHotspotBoard(boardCode) {
+  if (state.expandedHotspotBoard === boardCode) {
+    state.expandedHotspotBoard = null;
+    renderHotspots();
+    return;
+  }
+  state.expandedHotspotBoard = boardCode;
+  renderHotspots();
+  if (state.hotspotMembers.has(boardCode) || state.hotspotMembersLoading.has(boardCode)) return;
+  state.hotspotMembersLoading.add(boardCode);
+  state.hotspotMembersErrors.delete(boardCode);
+  renderHotspots();
+  try {
+    const result = await window.hengce.boardMembers(boardCode);
+    state.hotspotMembers.set(boardCode, result.members || []);
+  } catch (error) {
+    state.hotspotMembersErrors.set(boardCode, friendlyMarketError(error));
+  } finally {
+    state.hotspotMembersLoading.delete(boardCode);
+    renderHotspots();
+  }
+}
+
+function analyzeStock(code) {
+  $("#stock-code").value = code;
+  switchView("dashboard");
+  loadMarketData(code);
 }
 
 async function loadHotspots({ force = false } = {}) {
@@ -1397,8 +1546,21 @@ function renderDashboard() {
       `
     )
     .join("");
-  $("#chart-caption").textContent =
-    `前复权日线 · ${state.bars.at(-1)?.date || "--"}`;
+  const isIntraday = state.chartMode === "intraday";
+  $("#chart-caption").textContent = isIntraday
+    ? `当日分时 · ${state.intraday.at(-1)?.time?.slice(0, 10) || "等待数据"}`
+    : `前复权日线 · ${state.bars.at(-1)?.date || "--"}`;
+  $("#kline-range").classList.toggle("hidden", isIntraday);
+  $$("[data-chart-mode]").forEach((button) =>
+    button.classList.toggle("active", button.dataset.chartMode === state.chartMode)
+  );
+  $("#trade-plan").innerHTML = `
+    <div><span>买入观察</span><strong>放量站稳 ${number(model.pressure)}</strong><small>避免在压力位下方追高</small></div>
+    <i data-lucide="arrow-right"></i>
+    <div><span>持有条件</span><strong>守住 ${number(model.sma20)}</strong><small>结合量能与趋势持续确认</small></div>
+    <i data-lucide="arrow-right"></i>
+    <div><span>卖出 / 风控</span><strong>跌破 ${number(model.riskLine)}</strong><small>模型条件触发时优先控制风险</small></div>
+  `;
   schedulePriceChart();
   refreshIcons();
 }
@@ -1427,6 +1589,9 @@ function drawLineChart(canvas, points, options = {}) {
   const { context, width, height } = prepared;
   const pad = { left: 12, right: 64, top: 16, bottom: 28 };
   const rawValues = points.map((point) => point.value).filter(Number.isFinite);
+  if (Array.isArray(options.secondaryPoints)) {
+    rawValues.push(...options.secondaryPoints.filter(Number.isFinite));
+  }
   if (Number.isFinite(options.support)) rawValues.push(options.support);
   if (Number.isFinite(options.pressure)) rawValues.push(options.pressure);
   let minimum = Math.min(...rawValues);
@@ -1463,7 +1628,7 @@ function drawLineChart(canvas, points, options = {}) {
   context.textAlign = "center";
   context.textBaseline = "top";
   for (const index of [...new Set(labelIndices)]) {
-    context.fillText(points[index].date.slice(5), xFor(index), height - 20);
+    context.fillText(points[index].label || points[index].date.slice(5), xFor(index), height - 20);
   }
 
   const drawRule = (value, color, label) => {
@@ -1513,10 +1678,37 @@ function drawLineChart(canvas, points, options = {}) {
   context.lineJoin = "round";
   context.lineCap = "round";
   context.stroke();
+  if (Array.isArray(options.secondaryPoints) && options.secondaryPoints.length === points.length) {
+    context.beginPath();
+    options.secondaryPoints.forEach((value, index) => {
+      const x = xFor(index);
+      const y = yFor(value);
+      if (index === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    });
+    context.strokeStyle = options.secondaryColor || "#c28a21";
+    context.lineWidth = 1.25;
+    context.stroke();
+  }
   return { xFor, yFor, points, pad, width, height };
 }
 
 function drawPriceChart() {
+  if (state.chartMode === "intraday") {
+    const points = state.intraday.map((point) => ({
+      date: point.time,
+      label: point.time.slice(-5),
+      value: point.price,
+      intraday: point
+    }));
+    $("#price-chart")._geometry = drawLineChart($("#price-chart"), points, {
+      color: "#e23d3d",
+      fill: "rgba(226,61,61,0.12)",
+      secondaryPoints: state.intraday.map((point) => point.averagePrice),
+      secondaryColor: "#c28a21"
+    });
+    return;
+  }
   const selected = state.bars.slice(-state.chartRange);
   const geometry = drawLineChart(
     $("#price-chart"),
@@ -1873,7 +2065,7 @@ function bindEvents() {
   $$(".nav-item").forEach((button) =>
     button.addEventListener("click", () => switchView(button.dataset.view))
   );
-  $("#analyze-button").addEventListener("click", () => loadMarketData());
+  $("#analyze-button").addEventListener("click", submitStockSearch);
   $("#refresh-button").addEventListener("click", () => loadMarketData(state.code));
   $("#refresh-hotspots").addEventListener("click", () =>
     loadHotspots({ force: true })
@@ -1914,15 +2106,28 @@ function bindEvents() {
     event.currentTarget.select();
   });
   stockCodeInput.addEventListener("input", (event) => {
-    const digits = event.currentTarget.value.replace(/\D/g, "").slice(0, 6);
-    if (event.currentTarget.value !== digits) {
-      event.currentTarget.value = digits;
-    }
+    const query = event.currentTarget.value.trim();
+    if (/^\d+$/.test(query) && query.length > 6) event.currentTarget.value = query.slice(0, 6);
     showError("");
+    clearTimeout(stockSearchTimer);
+    if (!query) {
+      $("#stock-search-results").classList.add("hidden");
+      return;
+    }
+    stockSearchTimer = setTimeout(() => searchStockNames(query), 180);
   });
   stockCodeInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") loadMarketData();
+    if (event.key === "Enter") submitStockSearch();
   });
+  stockCodeInput.addEventListener("blur", () =>
+    setTimeout(() => $("#stock-search-results").classList.add("hidden"), 120)
+  );
+  $$("[data-chart-mode]").forEach((button) =>
+    button.addEventListener("click", () => {
+      state.chartMode = button.dataset.chartMode;
+      renderDashboard();
+    })
+  );
   $$("[data-range]").forEach((button) =>
     button.addEventListener("click", () => {
       $$("[data-range]").forEach((item) => item.classList.remove("active"));
@@ -2009,13 +2214,11 @@ function bindEvents() {
     );
     const index = Math.round(fraction * (geometry.points.length - 1));
     const point = geometry.points[index];
-    if (!point?.bar) return;
+    if (!point?.bar && !point?.intraday) return;
     const tooltip = $("#chart-tooltip");
-    tooltip.innerHTML = `
-      <strong>${point.bar.date}</strong><br>
-      开 ${number(point.bar.open)}　收 ${number(point.bar.close)}<br>
-      高 ${number(point.bar.high)}　低 ${number(point.bar.low)}
-    `;
+    tooltip.innerHTML = point.bar
+      ? `<strong>${point.bar.date}</strong><br>开 ${number(point.bar.open)}　收 ${number(point.bar.close)}<br>高 ${number(point.bar.high)}　低 ${number(point.bar.low)}`
+      : `<strong>${escapeHTML(point.intraday.time)}</strong><br>价格 ${number(point.intraday.price)}<br>均价 ${number(point.intraday.averagePrice)}`;
     tooltip.style.left = `${Math.min(bounds.width - 145, Math.max(6, x + 12))}px`;
     tooltip.style.top = `${Math.max(8, event.clientY - bounds.top - 60)}px`;
     tooltip.classList.remove("hidden");

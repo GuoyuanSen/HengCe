@@ -51,6 +51,31 @@ function parseBoardPayload(payload, type) {
     .filter(Boolean);
 }
 
+function parseBoardMembersPayload(payload) {
+  const rows = payload?.data?.diff;
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map((item) => {
+      const code = String(item?.f12 || "").trim();
+      const name = String(item?.f14 || "").trim();
+      const price = finiteNumber(item?.f2);
+      const changePercent = finiteNumber(item?.f3);
+      if (!/^\d{6}$/.test(code) || !name || price == null) return null;
+      return {
+        code,
+        name,
+        price,
+        changePercent,
+        amount: finiteNumber(item?.f6),
+        turnoverRate: finiteNumber(item?.f8),
+        volumeRatio: finiteNumber(item?.f10),
+        todayNetFlow: finiteNumber(item?.f62),
+        industry: String(item?.f100 || "").trim()
+      };
+    })
+    .filter(Boolean);
+}
+
 function boardScore(board) {
   const upCount = board.upCount || 0;
   const downCount = board.downCount || 0;
@@ -182,5 +207,6 @@ module.exports = {
   isNoisyConcept,
   normalizeBoardName,
   parseBoardPayload,
+  parseBoardMembersPayload,
   strengthLabel
 };

@@ -22,8 +22,8 @@ const releaseWorkflow = fs.readFileSync(
   "utf8"
 );
 
-test("release version is synchronized for v0.3.1", () => {
-  assert.equal(packageJson.version, "0.3.1");
+test("release version is synchronized for v0.3.2", () => {
+  assert.equal(packageJson.version, "0.3.2");
   assert.match(packageJson.scripts["build:win"], /build_windows\.js/);
 });
 

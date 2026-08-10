@@ -17,7 +17,7 @@ const {
   parseIndustryMembers,
   parseValuationSnapshot
 } = require("./valuation.js");
-const { buildHotspotSnapshot } = require("./hotspots.js");
+const { buildHotspotSnapshot, parseBoardMembersPayload } = require("./hotspots.js");
 const { analyze } = require("../src/engine.js");
 const {
   buildRecommendationSnapshot,
@@ -159,6 +159,35 @@ function fetchQuoteWithFallback(code, options = {}) {
 async function fetchQuote(rawCode) {
   const code = validatedCode(rawCode);
   return fetchQuoteWithFallback(code);
+}
+
+async function searchStocks(rawQuery) {
+  const query = String(rawQuery || "").trim().slice(0, 20);
+  if (!query) return [];
+  const params = new URLSearchParams({
+    input: query,
+    type: "14",
+    count: "10",
+    token: "D43BF722C8E33BDC906FB84D85E326E8"
+  });
+  const payload = await requestJSON(
+    `https://searchapi.eastmoney.com/api/suggest/get?${params}`
+  );
+  const rows = payload?.QuotationCodeTable?.Data || payload?.Data || payload?.data || [];
+  if (!Array.isArray(rows)) return [];
+  const seen = new Set();
+  return rows
+    .map((item) => ({
+      code: String(item?.Code || item?.code || "").trim(),
+      name: String(item?.Name || item?.name || "").trim(),
+      market: String(item?.SecurityTypeName || item?.MktName || item?.market || "A股").trim()
+    }))
+    .filter((item) => {
+      if (!/^\d{6}$/.test(item.code) || !item.name || seen.has(item.code)) return false;
+      seen.add(item.code);
+      return /^(0|3|6)/.test(item.code);
+    })
+    .slice(0, 8);
 }
 
 async function fetchEastmoneyKLines(code, limit) {
@@ -432,6 +461,29 @@ async function fetchHotspots() {
   });
 }
 
+async function fetchBoardMembers(rawBoardCode) {
+  const boardCode = String(rawBoardCode || "").trim().toUpperCase();
+  if (!/^BK\d{4}$/.test(boardCode)) throw new Error("板块代码无效");
+  const params = new URLSearchParams({
+    pn: "1",
+    pz: "12",
+    po: "1",
+    np: "1",
+    fltt: "2",
+    invt: "2",
+    fid: "f3",
+    fs: `b:${boardCode}`,
+    fields: "f2,f3,f6,f8,f10,f12,f14,f62,f100"
+  });
+  const payload = await firstAvailable(`板块成分 ${boardCode}`, [
+    () => requestJSON(`https://push2delay.eastmoney.com/api/qt/clist/get?${params}`),
+    () => requestJSON(`https://push2.eastmoney.com/api/qt/clist/get?${params}`)
+  ]);
+  const members = parseBoardMembersPayload(payload);
+  if (!members.length) throw new Error("板块成分股暂不可用");
+  return { boardCode, asOf: new Date().toISOString(), members };
+}
+
 async function mapWithConcurrency(items, limit, mapper) {
   const results = Array(items.length);
   let nextIndex = 0;
@@ -677,10 +729,13 @@ function createWindow() {
 app.setAppUserModelId(APP_ID);
 app.whenReady().then(() => {
   ipcMain.handle("market:quote", (_, code) => fetchQuote(code));
+  ipcMain.handle("market:search", (_, query) => searchStocks(query));
   ipcMain.handle("market:klines", (_, code, limit) => fetchKLines(code, limit));
   ipcMain.handle("market:indices", () => fetchIndices());
   ipcMain.handle("market:valuation", (_, code) => fetchValuation(code));
   ipcMain.handle("market:hotspots", () => fetchHotspots());
+  ipcMain.handle("market:board-members", (_, boardCode) => fetchBoardMembers(boardCode));
+  ipcMain.handle("market:intraday", (_, code) => fetchIntradayTrends(validatedCode(code)));
   ipcMain.handle("market:recommendations", () => fetchRecommendations());
   ipcMain.handle("market:overnight", () => fetchOvernightScan());
   ipcMain.handle("market:profile", (_, code) => fetchStockProfile(code));

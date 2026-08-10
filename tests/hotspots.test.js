@@ -5,7 +5,8 @@ const {
   buildHotspotSnapshot,
   isNoisyConcept,
   normalizeBoardName,
-  parseBoardPayload
+  parseBoardPayload,
+  parseBoardMembersPayload
 } = require("../electron/hotspots.js");
 
 function payload(rows) {
@@ -28,6 +29,25 @@ test("normalizes industry levels and removes technical concept buckets", () => {
     rows.map((item) => item.name),
     ["机器人"]
   );
+});
+
+test("parses board members for the inline secondary list", () => {
+  const members = parseBoardMembersPayload(payload([
+    { f12: "600001", f14: "示例股份", f2: 12.3, f3: 4.5, f6: 2e8, f8: 3.2, f10: 1.4, f62: 5e7 },
+    { f12: "BK1001", f14: "非股票", f2: 100 }
+  ]));
+  assert.equal(members.length, 1);
+  assert.deepEqual(members[0], {
+    code: "600001",
+    name: "示例股份",
+    price: 12.3,
+    changePercent: 4.5,
+    amount: 2e8,
+    turnoverRate: 3.2,
+    volumeRatio: 1.4,
+    todayNetFlow: 5e7,
+    industry: ""
+  });
 });
 
 test("scores sustained flow and breadth above a weak board", () => {
