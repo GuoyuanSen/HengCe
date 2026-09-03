@@ -88,6 +88,33 @@ if (!window.hengce && isBrowserPreview) {
       { code: "399001", name: "深证成指", price: 10921.66, percentChange: -0.18 },
       { code: "399006", name: "创业板指", price: 2248.53, percentChange: 0.67 }
     ],
+    compass: async () => ({
+      asOf: new Date().toISOString(),
+      regime: { key: "balanced", label: "均衡观察", tone: "neutral", score: 0.38, confidence: "较高" },
+      globalMarkets: [
+        { symbol: "usINX", name: "标普500", price: 6460.12, percentChange: 0.35, timestamp: "最近交易时段", source: "浏览器演示数据" },
+        { symbol: "usIXIC", name: "纳斯达克", price: 21410.72, percentChange: 0.62, timestamp: "最近交易时段", source: "浏览器演示数据" },
+        { symbol: "usDJI", name: "道琼斯", price: 45201.35, percentChange: 0.18, timestamp: "最近交易时段", source: "浏览器演示数据" },
+        { symbol: "hkHSI", name: "恒生指数", price: 25120.4, percentChange: -0.2, timestamp: "当前交易时段", source: "浏览器演示数据" },
+        { symbol: "hkHSTECH", name: "恒生科技", price: 4488.3, percentChange: 0.15, timestamp: "当前交易时段", source: "浏览器演示数据" },
+        { symbol: "usHXC", name: "中概股", price: 6051.33, percentChange: -0.05, timestamp: "最近交易时段", source: "浏览器演示数据" }
+      ],
+      domesticMarkets: [
+        { code: "000001", name: "上证指数", price: 3584.21, percentChange: 0.42 },
+        { code: "399001", name: "深证成指", price: 10921.66, percentChange: -0.18 },
+        { code: "399006", name: "创业板指", price: 2248.53, percentChange: 0.67 }
+      ],
+      styleMarkets: [
+        { code: "000300", name: "沪深300", style: "大盘核心", price: 4573.02, percentChange: 0.55 },
+        { code: "000016", name: "上证50", style: "大盘价值", price: 2930.4, percentChange: 0.55 },
+        { code: "000905", name: "中证500", style: "中盘", price: 7761.83, percentChange: 0.42 },
+        { code: "000852", name: "中证1000", style: "小盘", price: 7599.87, percentChange: 0.21 },
+        { code: "000688", name: "科创50", style: "科技成长", price: 1615.03, percentChange: -0.16 }
+      ],
+      signals: ["美股科技方向温和回暖", "港股科技情绪中性", "A股主要指数维持震荡", "大盘核心相对占优，科技成长偏弱"],
+      sourceStatus: { globalSource: "浏览器演示数据", domesticSource: "浏览器演示数据", styleSource: "浏览器演示数据", loaded: 14, expected: 14, partial: false },
+      note: "风向标描述市场环境，不预测单只股票，也不构成交易建议。"
+    }),
     valuation: async (code) => ({
       code,
       name: code === "603039" ? "泛微网络" : "演示标的",
@@ -256,7 +283,18 @@ if (!window.hengce && isBrowserPreview) {
         poolSize: 5231,
         prefilteredCount: 7,
         checkedCount: 7,
-        qualifiedCount: 2
+        qualifiedCount: 2,
+        funnel: {
+          raw: 612,
+          eligible: 584,
+          change: 136,
+          volumeRatio: 72,
+          turnover: 24,
+          marketCap: 7,
+          checked: 7,
+          recentLimitUp: 4,
+          intradayAndLimitUp: 2
+        }
       },
       sourceStatus: {
         candidateSource: "浏览器演示实时行情",
@@ -292,6 +330,9 @@ if (!window.hengce && isBrowserPreview) {
           intraday: { passes: true, aboveRatio: 0.96, currentAveragePrice: 42.66 },
           validation: { sampleCount: 4, averageReturn: 0.007, hitRate: 0.5, worstReturn: -0.031 }
         }
+      ],
+      nearMisses: [
+        { code: "600570", name: "恒生电子", failedRules: ["均价线上方91%"] }
       ]
     }),
     profile: async (code) => ({
@@ -303,10 +344,10 @@ if (!window.hengce && isBrowserPreview) {
     notify: async () => true,
     openExternal: async (url) => window.open(url, "_blank"),
     checkForUpdate: async () => ({
-      currentVersion: "0.3.4",
-      latestVersion: "0.3.4",
-      tagName: "v0.3.4",
-      releaseName: "衡策 v0.3.4",
+      currentVersion: "0.4.0",
+      latestVersion: "0.4.0",
+      tagName: "v0.4.0",
+      releaseName: "衡策 v0.4.0",
       releaseNotes: "新增应用内更新检查、下载进度和 SHA-256 完整性校验。",
       assetName: "HengCe-Apple-Silicon.dmg",
       assetSize: 136e6,
@@ -314,7 +355,7 @@ if (!window.hengce && isBrowserPreview) {
       downloadable: true,
       available: false
     }),
-    appVersion: async () => "0.3.4",
+    appVersion: async () => "0.4.0",
     downloadUpdate: async () => ({ downloaded: true, fileName: "HengCe-Apple-Silicon.dmg" }),
     installUpdate: async () => ({ opened: true, willQuit: false }),
     onUpdateProgress: () => () => {}
@@ -330,6 +371,7 @@ if (!window.hengce) {
     quote: unavailable,
     klines: unavailable,
     indices: unavailable,
+    compass: unavailable,
     valuation: unavailable,
     hotspots: unavailable,
     boardMembers: unavailable,
@@ -353,6 +395,13 @@ document.documentElement.dataset.platform =
   "browser";
 
 const { analyze, runBacktest } = window.HengCeEngine;
+const {
+  initialCodeCandidates,
+  normalizeCode,
+  resolveInitialCode,
+  setPrimaryHolding
+} = window.HengCePreferences;
+const { buildObservationPlan } = window.HengCeTradePlan;
 
 const DEFAULT_SETTINGS = {
   initialCapital: 100000,
@@ -365,8 +414,29 @@ const DEFAULT_SETTINGS = {
   stopLossPercent: 8
 };
 
+const storedWatchlist = readJSON("hengce.watchlist.v1", []);
+const storedHoldings = readJSON("hengce.holdings.v2", []);
+const storedUi = readJSON("hengce.ui.v1", {});
+const storedDefaultCode = normalizeCode(readJSON("hengce.defaultStock.v1", null));
+const storedLastCode = normalizeCode(readJSON("hengce.lastStock.v1", null));
+const storedOvernightStreaks = readJSON("hengce.overnight.streaks.v1", null);
+const VIEW_NAMES = ["dashboard", "hotspots", "compass", "recommendations", "overnight", "watchlist", "backtest", "holdings", "settings"];
+const requestedView = new URLSearchParams(window.location.search).get("view");
+const startupCodeCandidates = initialCodeCandidates({
+  defaultCode: storedDefaultCode,
+  lastCode: storedLastCode,
+  holdings: storedHoldings,
+  watchlist: storedWatchlist
+});
+
 const state = {
-  code: "603039",
+  code: startupCodeCandidates[0] || resolveInitialCode(),
+  defaultCode: storedDefaultCode,
+  activeView: VIEW_NAMES.includes(requestedView)
+    ? requestedView
+    : VIEW_NAMES.includes(storedUi.activeView)
+      ? storedUi.activeView
+      : "dashboard",
   quote: null,
   bars: [],
   indices: [],
@@ -375,7 +445,10 @@ const state = {
   hotspots: null,
   hotspotsLoading: false,
   hotspotsError: "",
-  hotspotMode: "composite",
+  compass: null,
+  compassLoading: false,
+  compassError: "",
+  hotspotMode: ["composite", "todayFlow", "threeDayFlow"].includes(storedUi.hotspotMode) ? storedUi.hotspotMode : "composite",
   expandedHotspotBoard: null,
   hotspotMembers: new Map(),
   hotspotMembersLoading: new Set(),
@@ -386,25 +459,29 @@ const state = {
   overnight: null,
   overnightLoading: false,
   overnightError: "",
-  overnightStreaks: new Map(),
+  overnightStreaks: new Map(
+    storedOvernightStreaks?.date === todayKey()
+      ? Object.entries(storedOvernightStreaks.values || {}).map(([code, value]) => [code, Number(value) || 0])
+      : []
+  ),
   recommendationFilters: {
-    market: "all",
-    industry: "all",
-    risk: "all",
-    minScore: 55
+    market: storedUi.recommendationFilters?.market || "all",
+    industry: storedUi.recommendationFilters?.industry || "all",
+    risk: storedUi.recommendationFilters?.risk || "all",
+    minScore: Number(storedUi.recommendationFilters?.minScore || 55)
   },
-  watchlist: readJSON("hengce.watchlist.v1", []),
+  watchlist: storedWatchlist,
   watchlistData: new Map(),
   watchlistLoading: false,
   watchlistError: "",
   analysis: null,
   intraday: [],
-  chartMode: "intraday",
+  chartMode: storedUi.chartMode === "daily" ? "daily" : "intraday",
   chartHoverIndex: null,
-  chartRange: 120,
-  strategy: "movingAverage",
-  backtestYears: 3,
-  holdings: readJSON("hengce.holdings.v2", []),
+  chartRange: [60, 120, 250].includes(Number(storedUi.chartRange)) ? Number(storedUi.chartRange) : 120,
+  strategy: ["movingAverage", "breakout", "rsiReversal"].includes(storedUi.strategy) ? storedUi.strategy : "movingAverage",
+  backtestYears: [1, 3, 5].includes(Number(storedUi.backtestYears)) ? Number(storedUi.backtestYears) : 3,
+  holdings: storedHoldings,
   quotes: new Map(),
   holdingHistories: new Map(),
   profiles: new Map(),
@@ -425,6 +502,7 @@ let stockSearchTimer = 0;
 let stockSearchRequest = 0;
 let holdingSearchTimer = 0;
 let holdingSearchRequest = 0;
+let marketLoadRequest = 0;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -439,6 +517,19 @@ function readJSON(key, fallback) {
 
 function writeJSON(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
+}
+
+function saveUiState() {
+  if (VIEW_NAMES.includes(requestedView)) return;
+  writeJSON("hengce.ui.v1", {
+    activeView: state.activeView,
+    hotspotMode: state.hotspotMode,
+    chartMode: state.chartMode,
+    chartRange: state.chartRange,
+    strategy: state.strategy,
+    backtestYears: state.backtestYears,
+    recommendationFilters: state.recommendationFilters
+  });
 }
 
 function escapeHTML(value) {
@@ -633,16 +724,16 @@ async function submitStockSearch() {
   else showError("未找到匹配的A股，请换一个名称或输入6位代码。");
 }
 
-async function loadMarketData(code = $("#stock-code").value) {
+async function loadMarketData(code = $("#stock-code").value, { force = false } = {}) {
   const normalized = String(code).trim().toLowerCase().replace(/^sh|^sz/, "");
   if (!/^\d{6}$/.test(normalized)) {
     showError("请输入6位A股代码。");
-    return;
+    return false;
   }
 
+  const request = ++marketLoadRequest;
   state.code = normalized;
   state.intraday = [];
-  state.chartMode = "intraday";
   state.valuation = null;
   state.valuationLoading = true;
   $("#stock-code").value = normalized;
@@ -650,49 +741,64 @@ async function loadMarketData(code = $("#stock-code").value) {
   showError("");
   renderValuation();
   try {
-    const indicesRequest = window.hengce.indices().catch(() => []);
-    const intradayRequest = window.hengce.intraday(normalized).catch(() => []);
+    const options = { force };
+    const indicesRequest = window.hengce.indices(options).catch(() => []);
+    const intradayRequest = window.hengce.intraday(normalized, options).catch(() => []);
     const valuationRequest = window.hengce
-      .valuation(normalized)
+      .valuation(normalized, options)
       .catch((error) => ({ error: friendlyMarketError(error) }));
     const [quote, bars] = await Promise.all([
-      window.hengce.quote(normalized),
-      window.hengce.klines(normalized, 1300)
+      window.hengce.quote(normalized, options),
+      window.hengce.klines(normalized, 1300, options)
     ]);
+    if (request !== marketLoadRequest) return false;
     state.quote = quote;
     state.bars = bars;
     state.indices = [];
     state.analysis = analyze(bars);
+    writeJSON("hengce.lastStock.v1", normalized);
     state.quotes.set(quote.code, quote);
     renderDashboard();
     renderBacktest();
     renderIndices();
     renderHoldings();
     intradayRequest.then((points) => {
-      if (state.code !== normalized) return;
+      if (request !== marketLoadRequest || state.code !== normalized) return;
       state.intraday = points;
       renderDashboard();
     });
     indicesRequest.then((indices) => {
+      if (request !== marketLoadRequest) return;
       state.indices = indices;
       renderIndices();
     });
     valuationRequest.then((valuation) => {
-      if (state.code !== normalized) return;
+      if (request !== marketLoadRequest || state.code !== normalized) return;
       state.valuation = valuation;
       state.valuationLoading = false;
       renderValuation();
+      renderObservationPlan();
     });
     $("#update-time").textContent = `更新 ${new Date().toLocaleTimeString("zh-CN", {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit"
     })}`;
+    return true;
   } catch (error) {
-    showError(friendlyMarketError(error));
+    if (request === marketLoadRequest) showError(friendlyMarketError(error));
+    return false;
   } finally {
-    setLoading(false);
-    schedulePriceChart();
+    if (request === marketLoadRequest) {
+      setLoading(false);
+      schedulePriceChart();
+    }
+  }
+}
+
+async function loadInitialMarketData() {
+  for (const code of startupCodeCandidates) {
+    if (await loadMarketData(code)) return;
   }
 }
 
@@ -1008,7 +1114,7 @@ async function loadHotspots({ force = false } = {}) {
   state.hotspotsError = "";
   renderHotspots();
   try {
-    state.hotspots = await window.hengce.hotspots();
+    state.hotspots = await window.hengce.hotspots({ force });
   } catch (error) {
     state.hotspotsError = friendlyMarketError(error);
   } finally {
@@ -1231,7 +1337,7 @@ function renderWatchlist() {
       const addedAt = new Date(item.addedAt);
       const alertClass = alert === "观察中" ? "" : alert === "等待行情" ? "muted" : "alert-active";
       return `
-        <tr>
+        <tr class="holding-row" data-code="${holding.code}" tabindex="0" role="button" aria-label="分析 ${escapeHTML(holding.name || holding.code)}">
           <td><div class="stock-cell"><strong>${escapeHTML(item.name)}</strong><span>${escapeHTML(item.code)} · ${escapeHTML(item.industry)}</span></div></td>
           <td class="${directionClass(data?.quote?.percentChange)}"><strong>${number(data?.quote?.price)}</strong><small>${percent(data?.quote?.percentChange)}</small></td>
           <td><strong>${number(data?.model?.score, 0)}</strong><small>${escapeHTML(data?.model?.trend || "--")}</small></td>
@@ -1302,6 +1408,86 @@ async function loadWatchlist({ force = false } = {}) {
   renderWatchlist();
 }
 
+function marketTimestamp(value) {
+  const raw = String(value || "").trim();
+  const compact = raw.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/);
+  if (compact) return `${compact[1]}-${compact[2]}-${compact[3]} ${compact[4]}:${compact[5]}`;
+  return raw || "当前数据";
+}
+
+function compassMarketCard(item) {
+  const timestamp = marketTimestamp(item.timestamp);
+  return `
+    <div class="compass-market-card">
+      <span>${escapeHTML(item.name)}</span>
+      <strong>${number(item.price)} <em class="${directionClass(item.percentChange)}">${percent(item.percentChange)}</em></strong>
+      <small>${escapeHTML(timestamp)} · ${escapeHTML(item.source || "公开行情")}</small>
+    </div>
+  `;
+}
+
+function renderCompass() {
+  const loading = $("#compass-loading");
+  const content = $("#compass-content");
+  const error = $("#compass-error");
+  const refreshButton = $("#refresh-compass");
+  loading.classList.toggle("hidden", !state.compassLoading);
+  content.classList.toggle("hidden", state.compassLoading || !state.compass);
+  error.textContent = state.compassError;
+  error.classList.toggle("hidden", !state.compassError);
+  refreshButton.disabled = state.compassLoading;
+  refreshButton.classList.toggle("rotating", state.compassLoading);
+  if (!state.compass || state.compassLoading) return;
+  const snapshot = state.compass;
+  const regime = snapshot.regime || {};
+  $("#compass-regime").className = `compass-regime ${regime.tone || "neutral"}`;
+  $("#compass-regime").innerHTML = `
+    <div><span>当前市场环境</span><strong>${escapeHTML(regime.label || "等待判断")}</strong></div>
+    <div><span>使用方式</span><p>先判断环境，再决定是否提高追涨门槛、降低集中度或保持等待。</p></div>
+    <div class="regime-score"><span>指数合成变化</span><strong>${regime.score == null ? "--" : percent(regime.score)}</strong><small>数据可信度 ${escapeHTML(regime.confidence || "偏低")}</small></div>
+  `;
+  $("#compass-global").innerHTML = (snapshot.globalMarkets || []).map(compassMarketCard).join("") || '<span class="muted">全球指数暂不可用</span>';
+  $("#compass-domestic").innerHTML = (snapshot.domesticMarkets || []).map(compassMarketCard).join("") || '<span class="muted">A股指数暂不可用</span>';
+  $("#compass-styles").innerHTML = (snapshot.styleMarkets || []).map((item) => `
+    <div class="compass-style-card">
+      <span>${escapeHTML(item.style || item.name)}</span>
+      <strong>${escapeHTML(item.name)} <em class="${directionClass(item.percentChange)}">${percent(item.percentChange)}</em></strong>
+      <small>${number(item.price)} · ${escapeHTML(item.source || "公开行情")}</small>
+    </div>
+  `).join("") || '<span class="muted">股票风格指数暂不可用</span>';
+  $("#compass-signal-list").innerHTML = (snapshot.signals || []).map((signal) => `
+    <div class="finding positive"><i data-lucide="navigation"></i><span>${escapeHTML(signal)}</span></div>
+  `).join("");
+  const asOf = new Date(snapshot.asOf);
+  const timestamp = Number.isNaN(asOf.getTime()) ? "--" : asOf.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+  $("#compass-note").textContent =
+    `数据时间 ${timestamp} · 全球：${snapshot.sourceStatus?.globalSource || "暂缺"} · A股：${snapshot.sourceStatus?.domesticSource || "暂缺"} · 风格：${snapshot.sourceStatus?.styleSource || "暂缺"}${snapshot.sourceStatus?.partial ? " · 部分数据暂缺" : ""}。${snapshot.note || "风向标不构成投资建议。"}`;
+  refreshIcons();
+}
+
+async function loadCompass({ force = false } = {}) {
+  if (state.compass && !force) {
+    renderCompass();
+    return;
+  }
+  state.compassLoading = true;
+  state.compassError = "";
+  renderCompass();
+  try {
+    state.compass = await window.hengce.compass({ force });
+  } catch (error) {
+    state.compassError = friendlyMarketError(error);
+  } finally {
+    state.compassLoading = false;
+    renderCompass();
+  }
+}
+
 async function loadRecommendations({ force = false } = {}) {
   if (state.recommendations && !force) {
     renderRecommendations();
@@ -1311,7 +1497,7 @@ async function loadRecommendations({ force = false } = {}) {
   state.recommendationsError = "";
   renderRecommendations();
   try {
-    state.recommendations = await window.hengce.recommendations();
+    state.recommendations = await window.hengce.recommendations({ force });
   } catch (error) {
     state.recommendationsError = friendlyMarketError(error);
   } finally {
@@ -1336,13 +1522,16 @@ function updateOvernightClock() {
 function scheduleOvernightRefresh() {
   clearTimeout(overnightRefreshTimer);
   overnightRefreshTimer = null;
-  if (!$("#overnight-view").classList.contains("active")) return;
-  const windowState = state.overnight?.window?.state;
+  const windowState = localOvernightWindow().state;
   if (!["waiting", "scanning"].includes(windowState)) return;
-  overnightRefreshTimer = setTimeout(
-    () => loadOvernight({ force: true }),
-    windowState === "scanning" ? 30000 : 60000
-  );
+  if (windowState === "scanning" && !state.overnight && !state.overnightLoading && !state.overnightError) {
+    loadOvernight({ force: true });
+    return;
+  }
+  overnightRefreshTimer = setTimeout(() => {
+    if (localOvernightWindow().state === "scanning") loadOvernight({ force: true });
+    else scheduleOvernightRefresh();
+  }, windowState === "scanning" ? 30000 : 60000);
 }
 
 function localOvernightWindow(now = new Date()) {
@@ -1350,7 +1539,7 @@ function localOvernightWindow(now = new Date()) {
   const minutes = now.getHours() * 60 + now.getMinutes();
   if (weekday === 0 || weekday === 6) return { state: "closed", label: "非交易日", locked: true };
   if (minutes < 870) return { state: "waiting", label: "14:30 开始扫描", locked: false };
-  if (minutes < 880) return { state: "scanning", label: "动态扫描中", locked: false };
+  if (minutes < 890) return { state: "scanning", label: "动态扫描中", locked: false };
   if (minutes < 900) return { state: "locked", label: "最终名单已锁定", locked: true };
   return { state: "closed", label: "今日扫描已结束", locked: true };
 }
@@ -1372,6 +1561,10 @@ function confirmOvernightPicks(snapshot) {
       return { ...item, confirmations };
     })
     .filter((item) => item.confirmations >= 2);
+  writeJSON("hengce.overnight.streaks.v1", {
+    date: todayKey(),
+    values: Object.fromEntries(state.overnightStreaks)
+  });
   return {
     ...snapshot,
     summary: { ...snapshot.summary, rawQualifiedCount: snapshot.picks?.length || 0 },
@@ -1392,6 +1585,7 @@ function renderOvernight() {
   const snapshot = state.overnight;
   if (!snapshot) {
     refreshButton.disabled = state.overnightLoading;
+    scheduleOvernightRefresh();
     return;
   }
   const windowState = snapshot.window || { state: "waiting", label: "等待扫描" };
@@ -1400,17 +1594,19 @@ function renderOvernight() {
   status.className = `window-status ${windowState.state}`;
   $("#overnight-window-detail").textContent =
     windowState.state === "scanning"
-      ? "每30秒复核一次，14:40 锁定最终名单"
+      ? "每30秒复核一次，连续两次通过后显示，14:50 锁定最终名单"
       : windowState.state === "locked"
         ? snapshot.summary?.checkedCount
           ? "名单不会因收盘前最后波动继续变化"
-          : "未在14:30–14:40运行，今日没有可恢复的锁定名单"
+          : "未在14:30–14:50运行，今日没有可恢复的锁定名单"
         : windowState.state === "closed"
           ? "下一个交易日 14:30 再次开放"
-          : "14:30 开始扫描，14:40 锁定最终名单";
+          : "14:30 开始扫描，14:50 锁定最终名单";
   refreshButton.disabled = state.overnightLoading || windowState.locked;
   const summary = snapshot.summary || {};
   const picks = snapshot.picks || [];
+  $("#overnight-badge").textContent = String(picks.length);
+  $("#overnight-badge").classList.toggle("hidden", picks.length === 0);
   const sourceStatus = snapshot.sourceStatus || {};
   $("#overnight-summary").innerHTML = [
     hotspotStat("扫描状态", windowState.label, windowState.state === "scanning" ? "30秒自动复核" : "严格按时间窗口执行"),
@@ -1418,6 +1614,27 @@ function renderOvernight() {
     hotspotStat("完成核对", `${summary.checkedCount || 0} 只`, "近20日涨停与分时均价"),
     hotspotStat("最终信号", `${picks.length} 只`, picks.length ? "同一行业最多2只" : "没有信号就保持空仓")
   ].join("");
+  const funnel = summary.funnel || {};
+  const funnelStages = [
+    ["行情样本", funnel.raw, "接口返回"],
+    ["基础风控", funnel.eligible, "代码/名称/价格"],
+    ["涨幅", funnel.change, "3%–5%"],
+    ["量比", funnel.volumeRatio, "≥ 1"],
+    ["换手", funnel.turnover, "5%–10%"],
+    ["流通市值", funnel.marketCap, "≤ 300亿"],
+    ["近20日涨停", funnel.recentLimitUp, "历史核对"],
+    ["分时均价", funnel.intradayAndLimitUp, "至少95%在线上"]
+  ];
+  $("#overnight-funnel").innerHTML = funnelStages.map(([label, value, detail]) => `
+    <div><span>${escapeHTML(label)}</span><strong>${number(value || 0, 0)}</strong><small>${escapeHTML(detail)}</small></div>
+  `).join("");
+  const nearMisses = snapshot.nearMisses || [];
+  $("#overnight-near-misses").innerHTML = nearMisses.length
+    ? `<span class="muted">只差一项：</span>${nearMisses.map((item) => `<button class="near-miss-chip" data-code="${escapeHTML(item.code)}">${escapeHTML(item.name)} · ${escapeHTML(item.failedRules.join("、"))}</button>`).join("")}`
+    : '<span class="muted">当前没有只差一项的接近命中标的</span>';
+  $$(".near-miss-chip").forEach((button) =>
+    button.addEventListener("click", () => analyzeStock(button.dataset.code))
+  );
   $("#overnight-empty").classList.toggle("hidden", picks.length > 0);
   const tableScroll = $("#overnight-table-body").closest(".table-scroll");
   tableScroll.classList.toggle("hidden", picks.length === 0);
@@ -1461,6 +1678,7 @@ async function loadOvernight({ force = false } = {}) {
   if (!isBrowserPreview && storedSnapshot?.date !== todayKey()) {
     state.overnight = null;
     state.overnightStreaks.clear();
+    writeJSON("hengce.overnight.streaks.v1", { date: todayKey(), values: {} });
   }
   if (!isBrowserPreview && ["locked", "closed"].includes(localWindow.state)) {
     if (storedSnapshot?.date === todayKey() && storedSnapshot.snapshot) {
@@ -1482,8 +1700,16 @@ async function loadOvernight({ force = false } = {}) {
   state.overnightError = "";
   renderOvernight();
   try {
-    const snapshot = confirmOvernightPicks(await window.hengce.overnight());
+    const previousCodes = new Set((state.overnight?.picks || []).map((item) => item.code));
+    const snapshot = confirmOvernightPicks(await window.hengce.overnight({ force }));
     state.overnight = snapshot;
+    const newPicks = (snapshot.picks || []).filter((item) => !previousCodes.has(item.code));
+    if (!isBrowserPreview && newPicks.length && !$("#overnight-view").classList.contains("active")) {
+      window.hengce.notify(
+        "衡策尾盘观察",
+        `${newPicks.map((item) => item.name).join("、")} 已连续两次通过筛选`
+      );
+    }
     if (!isBrowserPreview && snapshot.window?.state === "scanning") {
       writeJSON("hengce.overnight.snapshot.v1", {
         date: todayKey(),
@@ -1506,6 +1732,46 @@ function metricCell(title, value, detail, className = "") {
       <small>${escapeHTML(detail)}</small>
     </div>
   `;
+}
+
+function renderDefaultStockButton() {
+  const button = $("#toggle-default-stock");
+  if (!button) return;
+  const active = state.defaultCode === state.code;
+  button.classList.toggle("active", active);
+  button.title = active ? "取消默认标的" : "设为默认标的";
+  button.setAttribute("aria-label", button.title);
+}
+
+function renderObservationPlan() {
+  const container = $("#observation-plan");
+  if (!container) return;
+  const plan = buildObservationPlan({
+    quote: state.quote,
+    model: state.analysis,
+    valuation: state.valuation
+  });
+  const status = $("#observation-plan-status");
+  status.textContent = plan.status;
+  status.className = `plan-status ${plan.available ? "ready" : "waiting"}`;
+  const range = plan.pullbackRange
+    ? `${number(plan.pullbackRange.low)} - ${number(plan.pullbackRange.high)}`
+    : "暂未形成";
+  container.innerHTML = [
+    ["回踩观察区", range, "需结合量能确认"],
+    ["突破触发", plan.breakout ? number(plan.breakout) : "--", "站稳后再观察"],
+    ["估值约束", plan.valuationCap ? `不高于 ${number(plan.valuationCap)}` : "数据不足", plan.confidence ? `可信度 ${plan.confidence.label}` : "不强行套用"],
+    ["模型失效位", plan.invalidation ? number(plan.invalidation) : "--", "触及时重新评估"]
+  ].map(([label, value, detail]) => `
+    <div><span>${escapeHTML(label)}</span><strong>${escapeHTML(value)}</strong><small>${escapeHTML(detail)}</small></div>
+  `).join("");
+  $("#observation-plan-note").textContent =
+    `${plan.reason}。${plan.method || "区间仅用于研究观察，不构成买入建议。"}`;
+  const watchButton = $("#watch-current-stock");
+  const watched = state.quote && state.watchlist.some((item) => item.code === state.quote.code);
+  watchButton.disabled = !state.quote || watched;
+  watchButton.querySelector("span").textContent = watched ? "已加入观察" : "加入观察提醒";
+  $("#record-current-holding").disabled = !state.quote;
 }
 
 function renderDashboard() {
@@ -1634,6 +1900,8 @@ function renderDashboard() {
     <i data-lucide="arrow-right"></i>
     <div><span>卖出 / 风控</span><strong>跌破 ${number(model.riskLine)}</strong><small>模型条件触发时优先控制风险</small></div>
   `;
+  renderDefaultStockButton();
+  renderObservationPlan();
   schedulePriceChart();
   refreshIcons();
 }
@@ -2353,14 +2621,49 @@ function renderHoldings() {
           </td>
           <td>${recovery == null ? "--" : recovery <= 0 ? "已回本" : percent(recovery, true)}</td>
           <td>
-            <button class="table-action delete-holding" data-code="${holding.code}" title="删除">
-              <i data-lucide="trash-2"></i>
-            </button>
+            <div class="table-actions">
+              <button class="table-action edit-holding" data-code="${holding.code}" title="记录或调整持仓"><i data-lucide="pencil"></i></button>
+              <button class="table-action primary-holding ${holding.primary ? "active" : ""}" data-code="${holding.code}" title="${holding.primary ? "取消主仓" : "设为主仓"}"><i data-lucide="star"></i></button>
+              <button class="table-action analyze-holding" data-code="${holding.code}" title="进入分析"><i data-lucide="arrow-up-right"></i></button>
+              <button class="table-action delete-holding" data-code="${holding.code}" title="删除"><i data-lucide="trash-2"></i></button>
+            </div>
           </td>
         </tr>
       `;
     })
     .join("");
+  $$(".holding-row").forEach((row) => {
+    row.addEventListener("click", (event) => {
+      if (event.target.closest("button")) return;
+      analyzeStock(row.dataset.code);
+    });
+    row.addEventListener("keydown", (event) => {
+      if ((event.key === "Enter" || event.key === " ") && !event.target.closest("button")) {
+        event.preventDefault();
+        analyzeStock(row.dataset.code);
+      }
+    });
+  });
+  $$(".analyze-holding").forEach((button) =>
+    button.addEventListener("click", () => analyzeStock(button.dataset.code))
+  );
+  $$(".edit-holding").forEach((button) =>
+    button.addEventListener("click", () => {
+      const holding = state.holdings.find((item) => item.code === button.dataset.code);
+      if (holding) openHoldingDialog(holding);
+    })
+  );
+  $$(".primary-holding").forEach((button) =>
+    button.addEventListener("click", () => {
+      const current = state.holdings.find((item) => item.code === button.dataset.code);
+      state.holdings = current?.primary
+        ? state.holdings.map((holding) => ({ ...holding, primary: false }))
+        : setPrimaryHolding(state.holdings, button.dataset.code);
+      writeJSON("hengce.holdings.v2", state.holdings);
+      renderHoldings();
+      showToast(current?.primary ? "已取消主仓标记" : "已设为主仓，首次启动时优先显示");
+    })
+  );
   $$(".delete-holding").forEach((button) =>
     button.addEventListener("click", () => {
       state.holdings = state.holdings.filter(
@@ -2378,11 +2681,72 @@ function renderHoldings() {
   refreshIcons();
 }
 
+function openHoldingDialog(holding = null) {
+  const dialog = $("#holding-dialog");
+  const form = $("#holding-form");
+  form.reset();
+  $("#holding-search-results").classList.add("hidden");
+  if (holding) {
+    form.elements.code.value = holding.code || "";
+    form.elements.name.value = holding.name || "";
+    form.elements.shares.value = holding.shares || "";
+    form.elements.cost.value = holding.cost || "";
+  }
+  dialog.showModal();
+  $("#holding-stock-query").focus();
+}
+
+function addCurrentStockToWatchlist() {
+  if (!state.quote || !state.analysis) {
+    showToast("等待当前股票分析完成");
+    return;
+  }
+  if (state.watchlist.some((item) => item.code === state.quote.code)) {
+    showToast("当前股票已在观察提醒中");
+    return;
+  }
+  state.watchlist.push({
+    code: state.quote.code,
+    name: state.quote.name,
+    industry: state.valuation?.industry?.name || "未分类",
+    addedAt: new Date().toISOString(),
+    baselineScore: state.analysis.score,
+    pressure: state.analysis.pressure,
+    riskLine: state.analysis.riskLine,
+    lastAlert: ""
+  });
+  writeJSON("hengce.watchlist.v1", state.watchlist);
+  renderWatchlist();
+  if (state.recommendations) renderRecommendations();
+  renderObservationPlan();
+  showToast(`${state.quote.name} 已加入观察提醒`);
+}
+
 function populateSettings() {
   const form = $("#settings-form");
   Object.entries(state.settings).forEach(([key, value]) => {
     if (form.elements[key]) form.elements[key].value = value;
   });
+}
+
+function restoreUiControls() {
+  $("#stock-code").value = state.code;
+  $("#recommendation-market").value = state.recommendationFilters.market;
+  $("#recommendation-risk").value = state.recommendationFilters.risk;
+  $("#recommendation-min-score").value = String(state.recommendationFilters.minScore);
+  $("#backtest-years").value = String(state.backtestYears);
+  $$('[data-hotspot-mode]').forEach((button) =>
+    button.classList.toggle("active", button.dataset.hotspotMode === state.hotspotMode)
+  );
+  $$('[data-chart-mode]').forEach((button) =>
+    button.classList.toggle("active", button.dataset.chartMode === state.chartMode)
+  );
+  $$('[data-range]').forEach((button) =>
+    button.classList.toggle("active", Number(button.dataset.range) === state.chartRange)
+  );
+  $$('[data-strategy]').forEach((button) =>
+    button.classList.toggle("active", button.dataset.strategy === state.strategy)
+  );
 }
 
 function saveSettings() {
@@ -2501,6 +2865,8 @@ async function installUpdate() {
 }
 
 function switchView(view) {
+  state.activeView = view;
+  saveUiState();
   $$(".nav-item").forEach((button) =>
     button.classList.toggle("active", button.dataset.view === view)
   );
@@ -2509,6 +2875,7 @@ function switchView(view) {
   );
   if (view === "backtest") requestAnimationFrame(renderBacktest);
   if (view === "hotspots") loadHotspots();
+  if (view === "compass") loadCompass();
   if (view === "recommendations") loadRecommendations();
   if (view === "overnight") loadOvernight();
   if (view === "watchlist") loadWatchlist();
@@ -2521,9 +2888,12 @@ function bindEvents() {
     button.addEventListener("click", () => switchView(button.dataset.view))
   );
   $("#analyze-button").addEventListener("click", submitStockSearch);
-  $("#refresh-button").addEventListener("click", () => loadMarketData(state.code));
+  $("#refresh-button").addEventListener("click", () => loadMarketData(state.code, { force: true }));
   $("#refresh-hotspots").addEventListener("click", () =>
     loadHotspots({ force: true })
+  );
+  $("#refresh-compass").addEventListener("click", () =>
+    loadCompass({ force: true })
   );
   $("#refresh-recommendations").addEventListener("click", () =>
     loadRecommendations({ force: true })
@@ -2543,6 +2913,7 @@ function bindEvents() {
     $(selector).addEventListener("change", (event) => {
       state.recommendationFilters[key] =
         key === "minScore" ? Number(event.target.value) : event.target.value;
+      saveUiState();
       renderRecommendations();
     })
   );
@@ -2553,6 +2924,7 @@ function bindEvents() {
       );
       button.classList.add("active");
       state.hotspotMode = button.dataset.hotspotMode;
+      saveUiState();
       renderHotspots();
     })
   );
@@ -2581,6 +2953,7 @@ function bindEvents() {
     button.addEventListener("click", () => {
       state.chartMode = button.dataset.chartMode;
       state.chartHoverIndex = null;
+      saveUiState();
       renderDashboard();
     })
   );
@@ -2590,6 +2963,7 @@ function bindEvents() {
       button.classList.add("active");
       state.chartRange = Number(button.dataset.range);
       state.chartHoverIndex = null;
+      saveUiState();
       schedulePriceChart();
     })
   );
@@ -2598,11 +2972,13 @@ function bindEvents() {
       $$("[data-strategy]").forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
       state.strategy = button.dataset.strategy;
+      saveUiState();
       renderBacktest();
     })
   );
   $("#backtest-years").addEventListener("change", (event) => {
     state.backtestYears = Number(event.target.value);
+    saveUiState();
     renderBacktest();
   });
   $("#run-backtest").addEventListener("click", renderBacktest);
@@ -2625,6 +3001,32 @@ function bindEvents() {
     switchView("settings");
     checkForUpdates();
   });
+  $("#toggle-default-stock").addEventListener("click", () => {
+    if (state.defaultCode === state.code) {
+      state.defaultCode = null;
+      localStorage.removeItem("hengce.defaultStock.v1");
+      showToast("已取消默认标的");
+    } else {
+      state.defaultCode = state.code;
+      writeJSON("hengce.defaultStock.v1", state.code);
+      showToast("已设为默认标的");
+    }
+    renderDefaultStockButton();
+  });
+  $("#watch-current-stock").addEventListener("click", addCurrentStockToWatchlist);
+  $("#record-current-holding").addEventListener("click", () => {
+    if (!state.quote) {
+      showToast("等待当前股票行情完成");
+      return;
+    }
+    const existing = state.holdings.find((item) => item.code === state.quote.code);
+    openHoldingDialog(existing || {
+      code: state.quote.code,
+      name: state.quote.name,
+      shares: "",
+      cost: state.quote.price
+    });
+  });
   $$(".source-links button").forEach((button) =>
     button.addEventListener("click", () =>
       window.hengce.openExternal(button.dataset.url)
@@ -2632,12 +3034,7 @@ function bindEvents() {
   );
 
   const dialog = $("#holding-dialog");
-  $("#add-holding").addEventListener("click", () => {
-    $("#holding-form").reset();
-    $("#holding-search-results").classList.add("hidden");
-    dialog.showModal();
-    $("#holding-stock-query").focus();
-  });
+  $("#add-holding").addEventListener("click", () => openHoldingDialog());
   $("#close-dialog").addEventListener("click", () => dialog.close());
   $("#holding-form").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -2667,7 +3064,8 @@ function bindEvents() {
         name = code;
       }
     }
-    const holding = { code, name, shares: Math.floor(shares), cost };
+    const existing = state.holdings.find((item) => item.code === code);
+    const holding = { code, name, shares: Math.floor(shares), cost, primary: Boolean(existing?.primary) };
     const index = state.holdings.findIndex((item) => item.code === code);
     if (index >= 0) state.holdings[index] = holding;
     else state.holdings.push(holding);
@@ -2740,7 +3138,9 @@ function bindEvents() {
 }
 
 populateSettings();
+restoreUiControls();
 bindEvents();
+switchView(state.activeView);
 renderUpdate();
 window.hengce.appVersion().then((version) => {
   state.appVersion = version;
@@ -2752,5 +3152,6 @@ renderPortfolioRisk();
 refreshIcons();
 updateOvernightClock();
 setInterval(updateOvernightClock, 1000);
-loadMarketData(state.code);
+scheduleOvernightRefresh();
+loadInitialMarketData();
 checkForUpdates({ silent: true });

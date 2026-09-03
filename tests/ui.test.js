@@ -47,31 +47,42 @@ test("market failures are reduced to a friendly message", () => {
   assert.match(renderer, /function friendlyMarketError/);
   assert.match(renderer, /Error invoking remote method/);
   assert.match(renderer, /行情服务暂时无响应，请检查网络后重试/);
-  assert.match(renderer, /window\.hengce\.indices\(\)\.catch\(\(\) => \[\]\)/);
+  assert.match(renderer, /window\.hengce\.indices\(options\)\.catch\(\(\) => \[\]\)/);
 });
 
 test("valuation is isolated from the primary quote request", () => {
-  assert.match(preload, /valuation:\s*\(code\)/);
+  assert.match(preload, /valuation:\s*\(code, options/);
   assert.match(main, /ipcMain\.handle\("market:valuation"/);
   assert.match(renderer, /const valuationRequest = window\.hengce/);
-  assert.match(renderer, /\.valuation\(normalized\)/);
+  assert.match(renderer, /\.valuation\(normalized, options\)/);
   assert.match(html, /id="valuation-content"/);
   assert.match(html, /合理区间是情景估算，不是目标价/);
 });
 
 test("daily hotspots are a standalone lazy-loaded view", () => {
-  assert.match(preload, /hotspots:\s*\(\)/);
+  assert.match(preload, /hotspots:\s*\(options/);
   assert.match(main, /ipcMain\.handle\("market:hotspots"/);
   assert.match(html, /data-view="hotspots"/);
   assert.match(html, /id="hotspots-view"/);
   assert.match(html, /data-hotspot-mode="threeDayFlow"/);
   assert.match(renderer, /if \(view === "hotspots"\) loadHotspots\(\)/);
-  assert.match(renderer, /window\.hengce\.hotspots\(\)/);
+  assert.match(renderer, /window\.hengce\.hotspots\(\{ force \}\)/);
   assert.match(renderer, /不等同于真实机构持仓变化/);
 });
 
+test("market compass is a standalone lazy-loaded global and domestic view", () => {
+  assert.match(preload, /compass:\s*\(options/);
+  assert.match(main, /ipcMain\.handle\("market:compass"/);
+  assert.match(html, /data-view="compass"/);
+  assert.match(html, /id="compass-view"/);
+  assert.match(html, /id="compass-styles"/);
+  assert.match(renderer, /if \(view === "compass"\) loadCompass\(\)/);
+  assert.match(renderer, /window\.hengce\.compass\(\{ force \}\)/);
+  assert.match(renderer, /风向标描述市场环境/);
+});
+
 test("hotspot boards expand inline and stocks open the analysis view", () => {
-  assert.match(preload, /boardMembers:\s*\(boardCode\)/);
+  assert.match(preload, /boardMembers:\s*\(boardCode, options/);
   assert.match(main, /ipcMain\.handle\("market:board-members"/);
   assert.match(renderer, /function toggleHotspotBoard/);
   assert.match(renderer, /class="hotspot-members-row"/);
@@ -79,32 +90,39 @@ test("hotspot boards expand inline and stocks open the analysis view", () => {
 });
 
 test("analysis supports intraday and daily chart modes", () => {
-  assert.match(preload, /intraday:\s*\(code\)/);
+  assert.match(preload, /intraday:\s*\(code, options/);
   assert.match(main, /ipcMain\.handle\("market:intraday"/);
   assert.match(html, /data-chart-mode="intraday"/);
   assert.match(html, /id="trade-plan"/);
+  assert.match(html, /id="observation-plan"/);
+  assert.match(renderer, /buildObservationPlan/);
 });
 
 test("A-share recommendations are a standalone lazy-loaded view", () => {
-  assert.match(preload, /recommendations:\s*\(\)/);
+  assert.match(preload, /recommendations:\s*\(options/);
   assert.match(main, /ipcMain\.handle\("market:recommendations"/);
   assert.match(html, /data-view="recommendations"/);
   assert.match(html, /id="recommendations-view"/);
   assert.match(html, /A股优选/);
   assert.match(renderer, /if \(view === "recommendations"\) loadRecommendations\(\)/);
-  assert.match(renderer, /window\.hengce\.recommendations\(\)/);
+  assert.match(renderer, /window\.hengce\.recommendations\(\{ force \}\)/);
   assert.match(renderer, /不构成投资建议/);
 });
 
 test("overnight tail scan is a standalone timed view", () => {
-  assert.match(preload, /overnight:\s*\(\)/);
+  assert.match(preload, /overnight:\s*\(options/);
   assert.match(main, /ipcMain\.handle\("market:overnight"/);
   assert.match(html, /data-view="overnight"/);
   assert.match(html, /id="overnight-view"/);
-  assert.match(html, /14:30–14:40/);
+  assert.match(html, /14:30–14:50/);
   assert.match(renderer, /if \(view === "overnight"\) loadOvernight\(\)/);
-  assert.match(renderer, /window\.hengce\.overnight\(\)/);
+  assert.match(renderer, /window\.hengce\.overnight\(\{ force \}\)/);
   assert.match(renderer, /没有信号就保持空仓/);
+  assert.match(html, /id="overnight-funnel"/);
+  assert.match(html, /id="overnight-badge"/);
+  assert.match(renderer, /只差一项/);
+  assert.match(renderer, /scheduleOvernightRefresh\(\)/);
+  assert.doesNotMatch(renderer, /if \(!\$\("#overnight-view"\)\.classList\.contains\("active"\)\) return/);
 });
 
 test("watchlist alerts and portfolio risk are connected to live market data", () => {
@@ -112,7 +130,7 @@ test("watchlist alerts and portfolio risk are connected to live market data", ()
   assert.match(html, /id="watchlist-view"/);
   assert.match(html, /id="portfolio-risk-content"/);
   assert.match(html, /src="portfolio\.js"/);
-  assert.match(preload, /profile:\s*\(code\)/);
+  assert.match(preload, /profile:\s*\(code, options/);
   assert.match(preload, /notify:\s*\(title, body\)/);
   assert.match(main, /ipcMain\.handle\("market:profile"/);
   assert.match(main, /ipcMain\.handle\("system:notify"/);
@@ -164,6 +182,20 @@ test("recommendation rows open analysis without requiring the trailing button", 
   assert.match(renderer, /row\.addEventListener\("click"/);
   assert.match(renderer, /analyzeStock\(row\.dataset\.code\)/);
   assert.doesNotMatch(renderer, /class="secondary-button analyze-recommendation"/);
+});
+
+test("smart startup, default stock and holdings analysis remain local", () => {
+  assert.match(html, /src="preferences\.js"/);
+  assert.match(html, /id="toggle-default-stock"/);
+  assert.match(renderer, /resolveInitialCode/);
+  assert.match(renderer, /hengce\.lastStock\.v1/);
+  assert.match(renderer, /marketLoadRequest/);
+  assert.match(renderer, /class="holding-row"/);
+  assert.match(renderer, /primary-holding/);
+  assert.match(renderer, /edit-holding/);
+  assert.match(html, /id="watch-current-stock"/);
+  assert.match(html, /id="record-current-holding"/);
+  assert.match(renderer, /hengce\.ui\.v1/);
 });
 
 test("daily chart renders candlesticks and technical sub-panels", () => {

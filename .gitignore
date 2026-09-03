@@ -2,6 +2,7 @@
 .swiftpm/
 DerivedData/
 node_modules/
+.pnpm-store/
 dist/
 build/
 .cache/

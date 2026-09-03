@@ -26,6 +26,7 @@ const {
   validateHistoricalSignals
 } = require("./recommendations.js");
 const {
+  analyzeOvernightCandidatePayload,
   buildOvernightSnapshot,
   intradayAverageState,
   parseIntradayTrends,
@@ -39,6 +40,12 @@ const {
   parseChecksum,
   publicUpdateModel
 } = require("./updater.js");
+const {
+  GLOBAL_MARKETS,
+  STYLE_INDEX_DEFINITIONS,
+  buildCompassSnapshot,
+  parseTencentGlobalQuotes
+} = require("./compass.js");
 
 const APP_ID = "com.guoyuansen.hengce";
 const FRIENDLY_MARKET_ERROR = "行情服务暂时无响应，请检查网络后重试。";
@@ -50,6 +57,27 @@ const RELEASE_API_URL =
   "https://api.github.com/repos/GuoyuanSen/HengCe/releases/latest";
 let downloadedUpdate = null;
 let updateDownloadActive = false;
+const responseCache = new Map();
+
+async function cachedRequest(key, ttl, loader, force = false) {
+  const now = Date.now();
+  const cached = responseCache.get(key);
+  if (!force && cached?.value && cached.expiresAt > now) return cached.value;
+  if (!force && cached?.promise) return cached.promise;
+  const promise = Promise.resolve()
+    .then(loader)
+    .then((value) => {
+      responseCache.set(key, { value, expiresAt: Date.now() + ttl });
+      return value;
+    })
+    .catch((error) => {
+      if (cached?.value) responseCache.set(key, cached);
+      else responseCache.delete(key);
+      throw error;
+    });
+  responseCache.set(key, { ...cached, promise });
+  return promise;
+}
 
 function sleep(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -297,13 +325,57 @@ async function fetchIndices() {
         code,
         name,
         price: quote.price,
-        percentChange: quote.percentChange
+        percentChange: quote.percentChange,
+        timestamp: quote.timestamp,
+        source: quote.source
       };
     })
   );
   return settled
     .filter((item) => item.status === "fulfilled")
     .map((item) => item.value);
+}
+
+async function fetchMarketCompass() {
+  const symbols = GLOBAL_MARKETS.map((item) => item.symbol).join(",");
+  const [globalResult, domesticResult, styleResult] = await Promise.allSettled([
+    requestData(`https://qt.gtimg.cn/q=${symbols}`, {
+      encoding: "gb18030",
+      headers: TENCENT_HEADERS
+    }).then((text) => parseTencentGlobalQuotes(text)),
+    fetchIndices(),
+    Promise.allSettled(
+      STYLE_INDEX_DEFINITIONS.map(async ({ code, name, style, secid, tencentSymbol }) => {
+        const quote = await fetchQuoteWithFallback(code, { name, secid, tencentSymbol });
+        return {
+          code,
+          name,
+          style,
+          price: quote.price,
+          percentChange: quote.percentChange,
+          timestamp: quote.timestamp,
+          source: quote.source
+        };
+      })
+    ).then((results) => results.filter((item) => item.status === "fulfilled").map((item) => item.value))
+  ]);
+  const globalMarkets = globalResult.status === "fulfilled" ? globalResult.value : [];
+  const domesticMarkets = domesticResult.status === "fulfilled" ? domesticResult.value : [];
+  const styleMarkets = styleResult.status === "fulfilled" ? styleResult.value : [];
+  if (!globalMarkets.length && !domesticMarkets.length && !styleMarkets.length) {
+    throw new Error(FRIENDLY_MARKET_ERROR);
+  }
+  return buildCompassSnapshot({
+    globalMarkets,
+    domesticMarkets,
+    styleMarkets,
+    asOf: new Date().toISOString(),
+    sourceStatus: {
+      globalSource: globalMarkets.length ? "腾讯全球指数" : "全球指数暂缺",
+      domesticSource: domesticMarkets.length ? "腾讯行情优先，东方财富降级" : "A股指数暂缺",
+      styleSource: styleMarkets.length ? "腾讯行情优先，东方财富降级" : "A股风格指数暂缺"
+    }
+  });
 }
 
 function fetchDataset(reportName, code) {
@@ -628,7 +700,8 @@ async function fetchOvernightScan() {
     () => fetchPool("https://push2.eastmoney.com/api/qt/clist/get")
   ]);
   const poolSize = Number(payload?.data?.total || payload?.data?.diff?.length || 0);
-  const prefiltered = parseOvernightCandidatePayload(payload);
+  const candidateAnalysis = analyzeOvernightCandidatePayload(payload);
+  const prefiltered = candidateAnalysis.candidates;
   const selected = prefiltered.slice(0, 40);
   const settled = await mapWithConcurrency(selected, 6, async (candidate) => {
     const [bars, points] = await Promise.all([
@@ -648,7 +721,8 @@ async function fetchOvernightScan() {
   const snapshot = buildOvernightSnapshot(items, {
     window,
     poolSize,
-    prefilteredCount: prefiltered.length
+    prefilteredCount: prefiltered.length,
+    funnel: candidateAnalysis.funnel
   });
   snapshot.sourceStatus = {
     candidateSource: "东方财富A股实时行情",
@@ -862,22 +936,48 @@ function createWindow() {
     if (/^https:\/\//.test(url)) shell.openExternal(url);
     return { action: "deny" };
   });
-  window.loadFile(path.join(__dirname, "..", "src", "index.html"));
+  const captureView = String(process.env.HENGCE_CAPTURE_VIEW || "").trim();
+  window.loadFile(path.join(__dirname, "..", "src", "index.html"), {
+    query: captureView ? { view: captureView } : undefined
+  });
 }
 
 app.setAppUserModelId(APP_ID);
 app.whenReady().then(() => {
-  ipcMain.handle("market:quote", (_, code) => fetchQuote(code));
+  ipcMain.handle("market:quote", (_, code, options = {}) =>
+    cachedRequest(`quote:${code}`, 15000, () => fetchQuote(code), options.force)
+  );
   ipcMain.handle("market:search", (_, query) => searchStocks(query));
-  ipcMain.handle("market:klines", (_, code, limit) => fetchKLines(code, limit));
-  ipcMain.handle("market:indices", () => fetchIndices());
-  ipcMain.handle("market:valuation", (_, code) => fetchValuation(code));
-  ipcMain.handle("market:hotspots", () => fetchHotspots());
-  ipcMain.handle("market:board-members", (_, boardCode) => fetchBoardMembers(boardCode));
-  ipcMain.handle("market:intraday", (_, code) => fetchIntradayTrends(validatedCode(code)));
-  ipcMain.handle("market:recommendations", () => fetchRecommendations());
-  ipcMain.handle("market:overnight", () => fetchOvernightScan());
-  ipcMain.handle("market:profile", (_, code) => fetchStockProfile(code));
+  ipcMain.handle("market:klines", (_, code, limit, options = {}) =>
+    cachedRequest(`klines:${code}:${limit}`, 300000, () => fetchKLines(code, limit), options.force)
+  );
+  ipcMain.handle("market:indices", (_, options = {}) =>
+    cachedRequest("indices", 30000, () => fetchIndices(), options.force)
+  );
+  ipcMain.handle("market:compass", (_, options = {}) =>
+    cachedRequest("market-compass", 60000, () => fetchMarketCompass(), options.force)
+  );
+  ipcMain.handle("market:valuation", (_, code, options = {}) =>
+    cachedRequest(`valuation:${code}`, 1800000, () => fetchValuation(code), options.force)
+  );
+  ipcMain.handle("market:hotspots", (_, options = {}) =>
+    cachedRequest("hotspots", 120000, () => fetchHotspots(), options.force)
+  );
+  ipcMain.handle("market:board-members", (_, boardCode, options = {}) =>
+    cachedRequest(`board:${boardCode}`, 300000, () => fetchBoardMembers(boardCode), options.force)
+  );
+  ipcMain.handle("market:intraday", (_, code, options = {}) =>
+    cachedRequest(`intraday:${code}`, 15000, () => fetchIntradayTrends(validatedCode(code)), options.force)
+  );
+  ipcMain.handle("market:recommendations", (_, options = {}) =>
+    cachedRequest("recommendations", 600000, () => fetchRecommendations(), options.force)
+  );
+  ipcMain.handle("market:overnight", (_, options = {}) =>
+    cachedRequest("overnight", 15000, () => fetchOvernightScan(), options.force)
+  );
+  ipcMain.handle("market:profile", (_, code, options = {}) =>
+    cachedRequest(`profile:${code}`, 1800000, () => fetchStockProfile(code), options.force)
+  );
   ipcMain.handle("system:notify", (_, title, body) => {
     if (!Notification.isSupported()) return false;
     new Notification({ title: String(title), body: String(body) }).show();

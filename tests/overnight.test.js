@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  analyzeOvernightCandidatePayload,
   buildOvernightSnapshot,
   intradayAverageState,
   limitUpThreshold,
@@ -11,10 +12,11 @@ const {
   validateOvernightProxy
 } = require("../electron/overnight.js");
 
-test("tail scan window opens at 14:30 and locks at 14:40", () => {
+test("tail scan window opens at 14:30 and locks at 14:50", () => {
   assert.equal(scanWindow(new Date(2026, 7, 3, 14, 29)).state, "waiting");
   assert.equal(scanWindow(new Date(2026, 7, 3, 14, 30)).state, "scanning");
-  const locked = scanWindow(new Date(2026, 7, 3, 14, 40));
+  assert.equal(scanWindow(new Date(2026, 7, 3, 14, 49)).state, "scanning");
+  const locked = scanWindow(new Date(2026, 7, 3, 14, 50));
   assert.equal(locked.state, "locked");
   assert.equal(locked.canScan, false);
 });
@@ -28,6 +30,19 @@ test("candidate parser enforces the six snapshot filters", () => {
   const rows = parseOvernightCandidatePayload(payload);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].code, "603039");
+});
+
+test("candidate analysis exposes the sequential rejection funnel", () => {
+  const payload = { data: { diff: [
+    { f12: "603039", f14: "通过", f2: 41, f3: 4, f8: 7, f10: 1.4, f21: 25e9 },
+    { f12: "600001", f14: "涨幅不足", f2: 10, f3: 2, f8: 7, f10: 1.4, f21: 10e9 },
+    { f12: "600002", f14: "量比不足", f2: 10, f3: 4, f8: 7, f10: 0.8, f21: 10e9 }
+  ] } };
+  const result = analyzeOvernightCandidatePayload(payload);
+  assert.equal(result.funnel.raw, 3);
+  assert.equal(result.funnel.change, 2);
+  assert.equal(result.funnel.volumeRatio, 1);
+  assert.equal(result.candidates.length, 1);
 });
 
 test("recent limit-up uses board-specific thresholds", () => {
@@ -76,6 +91,11 @@ test("snapshot allows zero signals and caps an industry at two", () => {
     candidate("600000", "软件"), candidate("600001", "软件"), candidate("600002", "软件"), candidate("600003", "银行")
   ]);
   assert.deepEqual(snapshot.picks.map((item) => item.code), ["600000", "600001", "600003"]);
+  const nearMiss = buildOvernightSnapshot([
+    candidate("600004", "软件", false)
+  ]);
+  assert.equal(nearMiss.nearMisses.length, 1);
+  assert.match(nearMiss.nearMisses[0].failedRules[0], /均价线上方/);
 });
 
 test("overnight validation exits at next open and deducts costs", () => {

@@ -18,7 +18,7 @@ function scanWindow(now = new Date()) {
   if (minutes < 14 * 60 + 30) {
     return { state: "waiting", label: "14:30 开始扫描", canScan: false, locked: false };
   }
-  if (minutes < 14 * 60 + 40) {
+  if (minutes < 14 * 60 + 50) {
     return { state: "scanning", label: "动态扫描中", canScan: true, locked: false };
   }
   if (minutes < 15 * 60) {
@@ -28,9 +28,18 @@ function scanWindow(now = new Date()) {
 }
 
 function parseOvernightCandidatePayload(payload) {
+  return analyzeOvernightCandidatePayload(payload).candidates;
+}
+
+function analyzeOvernightCandidatePayload(payload) {
   const rows = payload?.data?.diff;
-  if (!Array.isArray(rows)) return [];
-  return rows
+  if (!Array.isArray(rows)) {
+    return {
+      candidates: [],
+      funnel: { raw: 0, eligible: 0, change: 0, volumeRatio: 0, turnover: 0, marketCap: 0 }
+    };
+  }
+  const parsed = rows
     .map((item) => {
       const candidate = {
         code: String(item?.f12 || "").trim(),
@@ -44,29 +53,44 @@ function parseOvernightCandidatePayload(payload) {
         floatMarketCap: finiteNumber(item?.f21),
         industry: String(item?.f100 || "未分类").trim() || "未分类"
       };
-      if (
-        !isEligibleCode(candidate.code) ||
-        !candidate.name ||
-        isRiskName(candidate.name) ||
-        candidate.price == null ||
-        candidate.price <= 0 ||
-        candidate.changePercent == null ||
-        candidate.changePercent < 3 ||
-        candidate.changePercent > 5 ||
-        candidate.volumeRatio == null ||
-        candidate.volumeRatio < 1 ||
-        candidate.turnoverRate == null ||
-        candidate.turnoverRate < 5 ||
-        candidate.turnoverRate > 10 ||
-        candidate.floatMarketCap == null ||
-        candidate.floatMarketCap <= 0 ||
-        candidate.floatMarketCap > 30e9
-      ) {
-        return null;
-      }
       return candidate;
-    })
-    .filter(Boolean);
+    });
+  const eligible = parsed.filter((candidate) =>
+    isEligibleCode(candidate.code) &&
+    candidate.name &&
+    !isRiskName(candidate.name) &&
+    candidate.price != null &&
+    candidate.price > 0
+  );
+  const change = eligible.filter((candidate) =>
+    candidate.changePercent != null &&
+    candidate.changePercent >= 3 &&
+    candidate.changePercent <= 5
+  );
+  const volumeRatio = change.filter((candidate) =>
+    candidate.volumeRatio != null && candidate.volumeRatio >= 1
+  );
+  const turnover = volumeRatio.filter((candidate) =>
+    candidate.turnoverRate != null &&
+    candidate.turnoverRate >= 5 &&
+    candidate.turnoverRate <= 10
+  );
+  const marketCap = turnover.filter((candidate) =>
+    candidate.floatMarketCap != null &&
+    candidate.floatMarketCap > 0 &&
+    candidate.floatMarketCap <= 30e9
+  );
+  return {
+    candidates: marketCap,
+    funnel: {
+      raw: rows.length,
+      eligible: eligible.length,
+      change: change.length,
+      volumeRatio: volumeRatio.length,
+      turnover: turnover.length,
+      marketCap: marketCap.length
+    }
+  };
 }
 
 function limitUpThreshold(code) {
@@ -160,6 +184,7 @@ function validateOvernightProxy(bars, code, costs = {}) {
 }
 
 function buildOvernightSnapshot(items, options = {}) {
+  const limitUpPassed = items.filter((item) => item.limitUp?.found);
   const ranked = items
     .filter((item) => item.limitUp?.found && item.intraday?.passes)
     .map((item) => ({
@@ -179,6 +204,30 @@ function buildOvernightSnapshot(items, options = {}) {
     counts.set(item.industry, count + 1);
     if (picks.length >= 10) break;
   }
+  const nearMisses = items
+    .map((item) => {
+      const failedRules = [];
+      if (!item.limitUp?.found) failedRules.push("近20日无涨停");
+      if (!item.intraday?.passes) {
+        failedRules.push(
+          item.intraday?.aboveRatio == null
+            ? "分时数据不足"
+            : `均价线上方${Math.round(item.intraday.aboveRatio * 100)}%`
+        );
+      }
+      return {
+        ...item.candidate,
+        limitUp: item.limitUp,
+        intraday: item.intraday,
+        failedRules
+      };
+    })
+    .filter((item) => item.failedRules.length === 1)
+    .sort((left, right) =>
+      (right.intraday?.aboveRatio || 0) - (left.intraday?.aboveRatio || 0) ||
+      right.amount - left.amount
+    )
+    .slice(0, 5);
   return {
     asOf: options.asOf || new Date().toISOString(),
     window: options.window || scanWindow(),
@@ -186,7 +235,13 @@ function buildOvernightSnapshot(items, options = {}) {
       poolSize: options.poolSize || 0,
       prefilteredCount: options.prefilteredCount || items.length,
       checkedCount: items.length,
-      qualifiedCount: ranked.length
+      qualifiedCount: ranked.length,
+      funnel: {
+        ...(options.funnel || {}),
+        checked: items.length,
+        recentLimitUp: limitUpPassed.length,
+        intradayAndLimitUp: ranked.length
+      }
     },
     rules: {
       changePercent: [3, 5],
@@ -196,11 +251,13 @@ function buildOvernightSnapshot(items, options = {}) {
       turnoverRate: [5, 10],
       minimumAboveAverageRatio: 0.95
     },
-    picks
+    picks,
+    nearMisses
   };
 }
 
 module.exports = {
+  analyzeOvernightCandidatePayload,
   buildOvernightSnapshot,
   intradayAverageState,
   limitUpThreshold,

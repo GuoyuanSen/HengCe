@@ -31,6 +31,10 @@
             <i data-lucide="flame"></i>
             <span>每日热点</span>
           </button>
+          <button class="nav-item" data-view="compass">
+            <i data-lucide="compass"></i>
+            <span>市场风向标</span>
+          </button>
           <button class="nav-item" data-view="recommendations">
             <i data-lucide="list-filter"></i>
             <span>A股优选</span>
@@ -38,6 +42,7 @@
           <button class="nav-item" data-view="overnight">
             <i data-lucide="moon-star"></i>
             <span>尾盘观察</span>
+            <span id="overnight-badge" class="nav-badge hidden">0</span>
           </button>
           <button class="nav-item" data-view="watchlist">
             <i data-lucide="bell-ring"></i>
@@ -104,8 +109,13 @@
               <h1>量化看板</h1>
               <p>趋势、动量、量能和风险统一评分</p>
             </div>
-            <div id="quote-title" class="quote-title">
-              <span class="skeleton short"></span>
+            <div class="quote-heading-actions">
+              <div id="quote-title" class="quote-title">
+                <span class="skeleton short"></span>
+              </div>
+              <button id="toggle-default-stock" class="icon-button" title="设为默认标的" aria-label="设为默认标的">
+                <i data-lucide="star"></i>
+              </button>
             </div>
           </div>
 
@@ -153,6 +163,25 @@
               <p class="valuation-note">
                 合理区间是情景估算，不是目标价。行业资金与涨跌家数仅作为市场景气代理，不等同于产业基本面。
               </p>
+            </section>
+
+            <section class="observation-plan-section">
+              <div class="section-heading">
+                <div>
+                  <h2>模型观察区间</h2>
+                  <span>把支撑、波动、突破条件和估值约束组合成可检查的计划</span>
+                </div>
+                <span id="observation-plan-status" class="plan-status">等待数据</span>
+              </div>
+              <div id="observation-plan" class="observation-plan"></div>
+              <p id="observation-plan-note" class="valuation-note">
+                区间仅用于研究观察，不是买入价格承诺；未达到条件时应明确等待。
+              </p>
+              <div class="plan-action-row">
+                <button id="watch-current-stock" class="secondary-button"><i data-lucide="bell-plus"></i><span>加入观察提醒</span></button>
+                <button id="record-current-holding" class="secondary-button"><i data-lucide="briefcase-business"></i><span>记录 / 调整持仓</span></button>
+                <span>软件不会连接券商或自动下单，实际成交后由用户手工确认。</span>
+              </div>
             </section>
 
             <section class="chart-section">
@@ -263,6 +292,51 @@
           </div>
         </section>
 
+        <section id="compass-view" class="view">
+          <div class="page-heading">
+            <div>
+              <h1>市场风向标</h1>
+              <p>用全球主要指数与 A 股方向判断当前风险环境</p>
+            </div>
+            <button id="refresh-compass" class="icon-button" title="刷新市场风向标">
+              <i data-lucide="refresh-cw"></i>
+            </button>
+          </div>
+          <div id="compass-error" class="error-banner hidden"></div>
+          <div id="compass-loading" class="loading-state">
+            <span class="spinner"></span>
+            <p>正在读取全球与 A 股主要指数</p>
+          </div>
+          <div id="compass-content" class="hidden">
+            <section id="compass-regime" class="compass-regime"></section>
+            <section class="compass-columns">
+              <div>
+                <div class="section-heading">
+                  <div><h2>全球方向</h2><span>美股最近交易时段与港股当前行情</span></div>
+                </div>
+                <div id="compass-global" class="compass-market-grid"></div>
+              </div>
+              <div>
+                <div class="section-heading">
+                  <div><h2>A股环境</h2><span>上证、深证与创业板方向</span></div>
+                </div>
+                <div id="compass-domestic" class="compass-market-grid"></div>
+              </div>
+            </section>
+            <section class="compass-styles">
+              <div class="section-heading">
+                <div><h2>股票大类与风格</h2><span>观察大盘、小盘、价值与科技成长谁更占优</span></div>
+              </div>
+              <div id="compass-styles" class="compass-style-grid"></div>
+            </section>
+            <section class="compass-signals">
+              <div class="section-heading"><div><h2>环境解读</h2><span>解释指标，不预测单只股票</span></div></div>
+              <div id="compass-signal-list" class="finding-list"></div>
+            </section>
+            <p id="compass-note" class="hotspots-note"></p>
+          </div>
+        </section>
+
         <section id="recommendations-view" class="view">
           <div class="page-heading">
             <div>
@@ -354,7 +428,7 @@
           <div class="page-heading">
             <div>
               <h1>尾盘观察</h1>
-              <p>14:30–14:40 严格筛选，只持有一个隔夜周期</p>
+              <p>14:30–14:50 严格筛选，只持有一个隔夜周期</p>
             </div>
             <button id="refresh-overnight" class="icon-button" title="刷新尾盘扫描">
               <i data-lucide="refresh-cw"></i>
@@ -365,10 +439,10 @@
             <div>
               <span id="overnight-window-label" class="window-status waiting">等待扫描</span>
               <strong id="overnight-clock-time">--:--:--</strong>
-              <small id="overnight-window-detail">14:30 开始扫描，14:40 锁定最终名单</small>
+              <small id="overnight-window-detail">14:30 开始扫描，14:50 锁定最终名单</small>
             </div>
             <div class="scan-timeline" aria-label="尾盘扫描时间轴">
-              <span>14:30</span><i></i><span>动态观察</span><i></i><span>14:40 锁定</span>
+              <span>14:30</span><i></i><span>动态观察</span><i></i><span>14:50 锁定</span>
             </div>
           </section>
 
@@ -387,6 +461,16 @@
               <span>流通市值 ≤ 300亿</span>
               <span>换手率 5%–10%</span>
               <span>至少95%分时在均价线上</span>
+            </section>
+            <section class="overnight-diagnostics">
+              <div class="section-heading">
+                <div>
+                  <h2>筛选漏斗</h2>
+                  <span>显示每一步剩余数量，帮助判断为何当天没有信号</span>
+                </div>
+              </div>
+              <div id="overnight-funnel" class="overnight-funnel"></div>
+              <div id="overnight-near-misses" class="overnight-near-misses"></div>
             </section>
             <section class="table-section overnight-table-section">
               <div class="section-heading">
@@ -719,6 +803,8 @@
     <script src="../node_modules/lucide/dist/umd/lucide.min.js"></script>
     <script src="engine.js"></script>
     <script src="portfolio.js"></script>
+    <script src="preferences.js"></script>
+    <script src="trade_plan.js"></script>
     <script src="renderer.js"></script>
   </body>
 </html>
