@@ -23,6 +23,11 @@ contextBridge.exposeInMainWorld("hengce", {
   installUpdate: () => ipcRenderer.invoke("system:update-install"),
   setWindowPreferences: (preferences) =>
     ipcRenderer.invoke("system:window-preferences", preferences),
+  aiSettings: () => ipcRenderer.invoke("ai:settings"),
+  saveAiSettings: (settings) => ipcRenderer.invoke("ai:settings-save", settings),
+  deleteAiKey: () => ipcRenderer.invoke("ai:key-delete"),
+  testAi: () => ipcRenderer.invoke("ai:test"),
+  trackWithAi: (payload) => ipcRenderer.invoke("ai:track", payload),
   onWindowPreferences: (callback) => {
     const listener = (_event, preferences) => callback(preferences);
     ipcRenderer.on("system:window-preferences", listener);

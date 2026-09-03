@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  allowsMarketScope,
   analyzeOvernightCandidatePayload,
   buildOvernightSnapshot,
   intradayAverageState,
@@ -11,6 +12,24 @@ const {
   scanWindow,
   validateOvernightProxy
 } = require("../electron/overnight.js");
+
+test("tail scan defaults to main board while allowing explicit growth and STAR scopes", () => {
+  assert.equal(allowsMarketScope("600000", "main"), true);
+  assert.equal(allowsMarketScope("002001", "main"), true);
+  assert.equal(allowsMarketScope("300001", "main"), false);
+  assert.equal(allowsMarketScope("688001", "main"), false);
+  assert.equal(allowsMarketScope("300001", "main-growth"), true);
+  assert.equal(allowsMarketScope("688001", "main-star"), true);
+  const row = (code) => ({ f12: code, f14: code, f2: 10, f3: 4, f8: 7, f10: 1.2, f21: 10e9 });
+  const payload = { data: { diff: [row("600000"), row("300001"), row("688001")] } };
+  const main = analyzeOvernightCandidatePayload(payload);
+  assert.deepEqual(main.candidates.map((item) => item.code), ["600000"]);
+  assert.equal(main.funnel.market, 1);
+  assert.deepEqual(
+    analyzeOvernightCandidatePayload(payload, { marketScope: "all" }).candidates.map((item) => item.code),
+    ["600000", "300001", "688001"]
+  );
+});
 
 test("tail scan window opens at 14:30 and locks at 14:50", () => {
   assert.equal(scanWindow(new Date(2026, 7, 3, 14, 29)).state, "waiting");

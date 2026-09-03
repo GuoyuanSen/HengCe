@@ -9,6 +9,33 @@ function clamp(value, minimum = 0, maximum = 100) {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
+const MARKET_SCOPES = {
+  main: { label: "仅沪深主板", boards: ["main"] },
+  "main-growth": { label: "主板 + 创业板", boards: ["main", "growth"] },
+  "main-star": { label: "主板 + 科创板", boards: ["main", "star"] },
+  all: { label: "全部可用 A 股", boards: ["main", "growth", "star", "other"] }
+};
+
+function marketBoardForCode(code) {
+  const value = String(code || "").trim();
+  if (/^(600|601|603|605|000|001|002|003)/.test(value)) return "main";
+  if (/^(300|301)/.test(value)) return "growth";
+  if (/^688/.test(value)) return "star";
+  return "other";
+}
+
+function normalizeMarketScope(scope) {
+  return Object.hasOwn(MARKET_SCOPES, scope) ? scope : "main";
+}
+
+function marketScopeLabel(scope) {
+  return MARKET_SCOPES[normalizeMarketScope(scope)].label;
+}
+
+function allowsMarketScope(code, scope) {
+  return MARKET_SCOPES[normalizeMarketScope(scope)].boards.includes(marketBoardForCode(code));
+}
+
 function scanWindow(now = new Date()) {
   const weekday = now.getDay();
   const minutes = now.getHours() * 60 + now.getMinutes();
@@ -27,16 +54,17 @@ function scanWindow(now = new Date()) {
   return { state: "closed", label: "今日扫描已结束", canScan: false, locked: true };
 }
 
-function parseOvernightCandidatePayload(payload) {
-  return analyzeOvernightCandidatePayload(payload).candidates;
+function parseOvernightCandidatePayload(payload, options = {}) {
+  return analyzeOvernightCandidatePayload(payload, options).candidates;
 }
 
-function analyzeOvernightCandidatePayload(payload) {
+function analyzeOvernightCandidatePayload(payload, options = {}) {
+  const marketScope = normalizeMarketScope(options.marketScope);
   const rows = payload?.data?.diff;
   if (!Array.isArray(rows)) {
     return {
       candidates: [],
-      funnel: { raw: 0, eligible: 0, change: 0, volumeRatio: 0, turnover: 0, marketCap: 0 }
+      funnel: { raw: 0, eligible: 0, market: 0, change: 0, volumeRatio: 0, turnover: 0, marketCap: 0 }
     };
   }
   const parsed = rows
@@ -62,7 +90,8 @@ function analyzeOvernightCandidatePayload(payload) {
     candidate.price != null &&
     candidate.price > 0
   );
-  const change = eligible.filter((candidate) =>
+  const market = eligible.filter((candidate) => allowsMarketScope(candidate.code, marketScope));
+  const change = market.filter((candidate) =>
     candidate.changePercent != null &&
     candidate.changePercent >= 3 &&
     candidate.changePercent <= 5
@@ -85,6 +114,7 @@ function analyzeOvernightCandidatePayload(payload) {
     funnel: {
       raw: rows.length,
       eligible: eligible.length,
+      market: market.length,
       change: change.length,
       volumeRatio: volumeRatio.length,
       turnover: turnover.length,
@@ -184,6 +214,7 @@ function validateOvernightProxy(bars, code, costs = {}) {
 }
 
 function buildOvernightSnapshot(items, options = {}) {
+  const marketScope = normalizeMarketScope(options.marketScope);
   const limitUpPassed = items.filter((item) => item.limitUp?.found);
   const ranked = items
     .filter((item) => item.limitUp?.found && item.intraday?.passes)
@@ -244,6 +275,8 @@ function buildOvernightSnapshot(items, options = {}) {
       }
     },
     rules: {
+      marketScope,
+      marketScopeLabel: marketScopeLabel(marketScope),
       changePercent: [3, 5],
       recentLimitUpSessions: 20,
       minimumVolumeRatio: 1,
@@ -257,10 +290,15 @@ function buildOvernightSnapshot(items, options = {}) {
 }
 
 module.exports = {
+  MARKET_SCOPES,
+  allowsMarketScope,
   analyzeOvernightCandidatePayload,
   buildOvernightSnapshot,
   intradayAverageState,
   limitUpThreshold,
+  marketBoardForCode,
+  marketScopeLabel,
+  normalizeMarketScope,
   parseIntradayTrends,
   parseOvernightCandidatePayload,
   recentLimitUp,

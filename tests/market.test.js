@@ -4,6 +4,7 @@ const {
   INDEX_DEFINITIONS,
   normalizeCode,
   parseTencentKLines,
+  parseTencentMinutePayload,
   parseTencentQuote,
   secidFor,
   tencentSymbolFor,
@@ -94,4 +95,22 @@ test("parses Tencent forward-adjusted daily bars", () => {
   assert.equal(bars[0].volume, 8858800);
   assert.equal(bars[1].close, 30.93);
   assert.ok(Math.abs(bars[1].percentChange - 3.3066) < 0.001);
+});
+
+test("parses Tencent minute prices and derives the yellow average line", () => {
+  const points = parseTencentMinutePayload({ data: { sh601318: { data: {
+    date: "20260903",
+    data: [
+      "0930 56.60 2196 12429360.00",
+      "0931 56.75 13689 77520870.46",
+      "1500 58.00 1087120 6309520667.28",
+      "1506 58.00 1087218 6310089067.28"
+    ]
+  } } } }, "sh601318");
+  assert.equal(points.length, 3);
+  assert.equal(points[0].time, "2026-09-03 09:30");
+  assert.equal(points[0].averagePrice, 56.6);
+  assert.ok(Math.abs(points[1].averagePrice - 56.63) < 0.01);
+  assert.equal(points[2].time, "2026-09-03 15:00");
+  assert.equal(points[0].source, "腾讯行情");
 });

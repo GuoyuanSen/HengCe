@@ -114,10 +114,47 @@ function parseTencentKLines(payload, symbol) {
     .filter(Boolean);
 }
 
+function parseTencentMinutePayload(payload, symbol) {
+  const stock = payload?.data?.[symbol]?.data;
+  const lines = stock?.data;
+  const rawDate = String(stock?.date || "");
+  if (!Array.isArray(lines) || !/^\d{8}$/.test(rawDate)) {
+    throw new Error("腾讯分时行情格式无效");
+  }
+  const date = `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`;
+  return lines
+    .map((line) => {
+      const [rawTime, rawPrice, rawVolume, rawAmount] = String(line || "").trim().split(/\s+/);
+      if (!/^\d{4}$/.test(rawTime)) return null;
+      const minutes = Number(rawTime.slice(0, 2)) * 60 + Number(rawTime.slice(2));
+      const inTradingSession =
+        (minutes >= 570 && minutes <= 690) ||
+        (minutes >= 780 && minutes <= 900);
+      if (!inTradingSession) return null;
+      const price = Number(rawPrice);
+      const cumulativeLots = Number(rawVolume);
+      const cumulativeAmount = Number(rawAmount);
+      const averagePrice = cumulativeLots > 0 && cumulativeAmount > 0
+        ? cumulativeAmount / (cumulativeLots * 100)
+        : price;
+      if (![price, averagePrice].every(Number.isFinite) || price <= 0 || averagePrice <= 0) {
+        return null;
+      }
+      return {
+        time: `${date} ${rawTime.slice(0, 2)}:${rawTime.slice(2)}`,
+        price,
+        averagePrice,
+        source: "腾讯行情"
+      };
+    })
+    .filter(Boolean);
+}
+
 module.exports = {
   INDEX_DEFINITIONS,
   normalizeCode,
   parseTencentKLines,
+  parseTencentMinutePayload,
   parseTencentQuote,
   secidFor,
   tencentSymbolFor,

@@ -49,6 +49,10 @@
             <span>观察提醒</span>
             <span id="watchlist-badge" class="nav-badge hidden">0</span>
           </button>
+          <button class="nav-item" data-view="ai">
+            <i data-lucide="sparkles"></i>
+            <span>AI追踪</span>
+          </button>
           <button class="nav-item" data-view="backtest">
             <i data-lucide="flask-conical"></i>
             <span>策略回测</span>
@@ -113,6 +117,7 @@
               <div id="quote-title" class="quote-title">
                 <span class="skeleton short"></span>
               </div>
+              <span id="quote-industry-badge" class="industry-badge hidden">读取行业</span>
               <button id="toggle-default-stock" class="icon-button" title="设为默认标的" aria-label="设为默认标的">
                 <i data-lucide="star"></i>
               </button>
@@ -145,6 +150,20 @@
             </section>
 
             <section id="metric-grid" class="metric-grid"></section>
+
+            <section class="company-profile-section">
+              <div class="section-heading">
+                <div>
+                  <h2>公司画像</h2>
+                  <span>所属板块、主营业务与公司公开资料</span>
+                </div>
+                <span id="company-profile-source" class="data-confidence"></span>
+              </div>
+              <div id="company-profile-loading" class="company-profile-loading">
+                <span class="spinner"></span><span>正在读取公司与业务资料</span>
+              </div>
+              <div id="company-profile-content" class="company-profile-content hidden"></div>
+            </section>
 
             <section class="valuation-section">
               <div class="section-heading">
@@ -202,6 +221,7 @@
                   </div>
                 </div>
               </div>
+              <div id="intraday-warning" class="data-warning hidden"></div>
               <div id="trade-plan" class="trade-plan"></div>
               <div id="price-chart-wrap" class="chart-wrap">
                 <canvas id="price-chart"></canvas>
@@ -430,9 +450,20 @@
               <h1>尾盘观察</h1>
               <p>14:30–14:50 严格筛选，只持有一个隔夜周期</p>
             </div>
-            <button id="refresh-overnight" class="icon-button" title="刷新尾盘扫描">
-              <i data-lucide="refresh-cw"></i>
-            </button>
+            <div class="overnight-heading-actions">
+              <label>
+                <span>股票范围</span>
+                <select id="overnight-market-scope">
+                  <option value="main" selected>仅沪深主板</option>
+                  <option value="main-growth">主板 + 创业板</option>
+                  <option value="main-star">主板 + 科创板</option>
+                  <option value="all">全部可用 A 股</option>
+                </select>
+              </label>
+              <button id="refresh-overnight" class="icon-button" title="刷新尾盘扫描">
+                <i data-lucide="refresh-cw"></i>
+              </button>
+            </div>
           </div>
 
           <section class="overnight-clock">
@@ -455,6 +486,7 @@
           <div id="overnight-content">
             <section id="overnight-summary" class="hotspots-summary"></section>
             <section class="overnight-rules" aria-label="尾盘筛选规则">
+              <span id="overnight-scope-rule">仅沪深主板</span>
               <span>涨幅 3%–5%</span>
               <span>近20日有涨停</span>
               <span>量比 ≥ 1</span>
@@ -555,6 +587,94 @@
               <p class="hotspots-note">提醒在打开应用并刷新数据时触发，不连接券商，也不会自动下单。</p>
             </section>
           </div>
+        </section>
+
+        <section id="ai-view" class="view">
+          <div class="page-heading">
+            <div>
+              <h1>AI追踪</h1>
+              <p>比较前后变化，解释量价结构、风险与策略失效条件</p>
+            </div>
+            <button id="run-ai-tracking" class="primary-button">
+              <i data-lucide="sparkles"></i>
+              <span>生成本次追踪</span>
+            </button>
+          </div>
+          <section class="ai-scope-band">
+            <label>
+              <span>追踪标的</span>
+              <select id="ai-target"></select>
+            </label>
+            <div>
+              <span>追踪范围</span>
+              <strong id="ai-target-count">0 只</strong>
+            </div>
+            <div>
+              <span>AI 服务</span>
+              <strong id="ai-service-state">读取中</strong>
+            </div>
+            <div>
+              <span>历史快照</span>
+              <strong id="ai-snapshot-count">0 份</strong>
+            </div>
+          </section>
+          <div id="ai-config-banner" class="ai-config-banner hidden"></div>
+          <div id="ai-error" class="error-banner hidden"></div>
+          <div id="ai-loading" class="loading-state hidden">
+            <span class="spinner"></span>
+            <p>正在汇总行情、量化结构与上次追踪结果</p>
+          </div>
+          <div id="ai-empty" class="empty-state ai-empty-state">
+            <i data-lucide="scan-search"></i>
+            <strong>选择标的并生成第一份追踪快照</strong>
+            <span>未配置 API Key 时仍会生成本地量化摘要</span>
+          </div>
+          <div id="ai-content" class="hidden">
+            <section id="ai-summary" class="hotspots-summary"></section>
+            <section class="ai-report-hero">
+              <div>
+                <span id="ai-report-source">本地量化</span>
+                <h2 id="ai-report-title">--</h2>
+                <p id="ai-report-summary"></p>
+              </div>
+              <div id="ai-report-stance" class="ai-stance">等待数据</div>
+            </section>
+            <section class="ai-report-grid">
+              <article>
+                <div class="section-heading"><div><h2>相对上次变化</h2><span>只突出新增或显著变化</span></div></div>
+                <div id="ai-change-list" class="ai-change-list"></div>
+              </article>
+              <article>
+                <div class="section-heading"><div><h2>积极因素</h2><span>需要后续数据继续确认</span></div></div>
+                <div id="ai-catalyst-list" class="finding-list"></div>
+              </article>
+              <article class="ai-risk-card">
+                <div class="section-heading"><div><h2>主要风险</h2><span>风险优先于收益想象</span></div></div>
+                <div id="ai-risk-list" class="finding-list"></div>
+              </article>
+            </section>
+            <section class="ai-plan-section">
+              <div class="section-heading"><div><h2>观察计划</h2><span>沿用量化引擎的支撑、压力与失效位置</span></div></div>
+              <div id="ai-plan-grid" class="ai-plan-grid"></div>
+              <p id="ai-plan-rationale" class="valuation-note"></p>
+            </section>
+            <section class="ai-followup-grid">
+              <article>
+                <h2>下次重点检查</h2>
+                <div id="ai-next-checks" class="finding-list"></div>
+              </article>
+              <article>
+                <h2>策略失效条件</h2>
+                <div id="ai-invalidations" class="finding-list"></div>
+              </article>
+            </section>
+            <section class="ai-history-section">
+              <div class="section-heading"><div><h2>追踪记录</h2><span>保存在本机，最多保留最近80份</span></div></div>
+              <div id="ai-history" class="ai-history"></div>
+              <p id="ai-limitations" class="hotspots-note"></p>
+            </section>
+          </div>
+          <p class="hotspots-note ai-disclaimer">AI 只解释已提供的公开数据，不连接券商、不自动下单，也不构成投资建议。</p>
         </section>
 
         <section id="backtest-view" class="view">
@@ -732,6 +852,39 @@
               <span>最小化到系统托盘</span>
             </label>
           </section>
+          <section class="ai-settings-section">
+            <div class="section-heading">
+              <div>
+                <h2>AI 服务</h2>
+                <span>用于 AI 追踪；Key 仅由桌面主进程读取，不写入源码或页面存储</span>
+              </div>
+              <span id="ai-settings-badge" class="data-confidence">未配置</span>
+            </div>
+            <div class="ai-settings-grid">
+              <label>
+                <span>Responses API 地址</span>
+                <input id="ai-base-url" type="url" value="https://api.openai.com/v1" autocomplete="off" spellcheck="false">
+              </label>
+              <label>
+                <span>模型</span>
+                <input id="ai-model" value="gpt-5.6-luna" autocomplete="off" spellcheck="false">
+              </label>
+              <label>
+                <span>API Key</span>
+                <input id="ai-api-key" type="password" autocomplete="new-password" placeholder="输入新 Key；留空保留已保存 Key">
+              </label>
+              <label class="ai-privacy-toggle">
+                <input id="ai-send-holdings" type="checkbox">
+                <span>允许把当前标的的持仓股数和成本发送给 AI</span>
+              </label>
+            </div>
+            <div class="ai-settings-actions">
+              <button id="save-ai-settings" class="primary-button" type="button">保存 AI 配置</button>
+              <button id="test-ai-connection" class="secondary-button" type="button">测试连接</button>
+              <button id="delete-ai-key" class="secondary-button" type="button">删除 Key</button>
+              <span id="ai-settings-status">尚未读取配置</span>
+            </div>
+          </section>
           <section class="update-section">
             <div class="update-icon"><i data-lucide="download"></i></div>
             <div class="update-copy">
@@ -815,6 +968,7 @@
     <script src="portfolio.js"></script>
     <script src="preferences.js"></script>
     <script src="trade_plan.js"></script>
+    <script src="ai_tracking.js"></script>
     <script src="renderer.js"></script>
   </body>
 </html>

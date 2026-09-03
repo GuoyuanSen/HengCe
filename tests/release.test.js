@@ -22,8 +22,8 @@ const releaseWorkflow = fs.readFileSync(
   "utf8"
 );
 
-test("release version is synchronized for v0.4.1", () => {
-  assert.equal(packageJson.version, "0.4.1");
+test("release version is synchronized for v0.5.0", () => {
+  assert.equal(packageJson.version, "0.5.0");
   assert.match(packageJson.scripts["build:win"], /build_windows\.js/);
   assert.match(fs.readFileSync(path.join(root, "scripts", "build.js"), "utf8"), /ELECTRON_ZIP_DIR/);
 });

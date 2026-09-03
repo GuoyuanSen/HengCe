@@ -1,10 +1,11 @@
-const { app, BrowserWindow, ipcMain, Menu, nativeImage, net, Notification, shell, Tray } = require("electron");
+const { app, BrowserWindow, ipcMain, Menu, nativeImage, net, Notification, safeStorage, shell, Tray } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const {
   INDEX_DEFINITIONS,
   parseTencentKLines,
+  parseTencentMinutePayload,
   parseTencentQuote,
   secidFor,
   tencentSymbolFor,
@@ -30,6 +31,7 @@ const {
   analyzeOvernightCandidatePayload,
   buildOvernightSnapshot,
   intradayAverageState,
+  normalizeMarketScope,
   parseIntradayTrends,
   parseOvernightCandidatePayload,
   recentLimitUp,
@@ -48,6 +50,21 @@ const {
   buildCompassSnapshot,
   parseTencentGlobalQuotes
 } = require("./compass.js");
+const {
+  TRACKING_REPORT_SCHEMA,
+  buildTrackingInput,
+  buildTrackingInstructions,
+  normalizeTrackingReport
+} = require("../src/ai_tracking.js");
+const {
+  DEFAULT_AI_SETTINGS,
+  normalizeAiSettings,
+  parseJsonResponse,
+  publicAiSettings,
+  responsesUrl,
+  safeApiError
+} = require("./ai_service.js");
+const { parseCompanyOrganization, profileSecucode } = require("./company.js");
 
 const APP_ID = "com.guoyuansen.hengce";
 const FRIENDLY_MARKET_ERROR = "行情服务暂时无响应，请检查网络后重试。";
@@ -64,6 +81,7 @@ let tray = null;
 let minimizeToTrayEnabled = true;
 let trayHintShown = false;
 let isQuitting = false;
+let sessionAiKey = "";
 const responseCache = new Map();
 
 async function cachedRequest(key, ttl, loader, force = false) {
@@ -92,12 +110,18 @@ function sleep(milliseconds) {
 
 async function requestData(
   url,
-  { encoding = "utf-8", headers = {}, parse = (text) => text } = {}
+  {
+    encoding = "utf-8",
+    headers = {},
+    parse = (text) => text,
+    timeoutMs = 8000,
+    attempts = 2
+  } = {}
 ) {
   let lastError;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await net.fetch(url, {
         signal: controller.signal,
@@ -118,7 +142,7 @@ async function requestData(
       return parse(text);
     } catch (error) {
       lastError = error;
-      if (attempt === 0) await sleep(250);
+      if (attempt < attempts - 1) await sleep(250);
     } finally {
       clearTimeout(timeout);
     }
@@ -689,19 +713,39 @@ async function fetchIntradayTrends(code) {
     iscr: "0",
     iscca: "0"
   });
-  const payload = await requestJSON(
-    `https://push2his.eastmoney.com/api/qt/stock/trends2/get?${params}`
-  );
-  const points = parseIntradayTrends(payload);
-  if (!points.length) throw new Error("分时均价数据为空");
-  return points;
+  const fetchTrends = async (baseUrl) => {
+    const payload = await requestJSON(`${baseUrl}?${params}`, {
+      timeoutMs: 4500,
+      attempts: 1
+    });
+    const points = parseIntradayTrends(payload);
+    if (!points.length) throw new Error("分时均价数据为空");
+    return points.map((point) => ({ ...point, source: "东方财富" }));
+  };
+  const fetchTencentTrends = async () => {
+    const symbol = tencentSymbolFor(code);
+    const payload = await requestJSON(
+      `https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=${symbol}`,
+      { headers: TENCENT_HEADERS, timeoutMs: 4500, attempts: 1 }
+    );
+    const points = parseTencentMinutePayload(payload, symbol);
+    if (!points.length) throw new Error("腾讯分时行情数据为空");
+    return points;
+  };
+  return firstAvailable(`分时行情 ${code}`, [
+    fetchTencentTrends,
+    () => fetchTrends("https://push2.eastmoney.com/api/qt/stock/trends2/get"),
+    () => fetchTrends("https://push2delay.eastmoney.com/api/qt/stock/trends2/get"),
+    () => fetchTrends("https://push2his.eastmoney.com/api/qt/stock/trends2/get")
+  ]);
 }
 
-async function fetchOvernightScan() {
+async function fetchOvernightScan(options = {}) {
+  const marketScope = normalizeMarketScope(options.marketScope);
   const window = scanWindow();
   if (!window.canScan) {
     return {
-      ...buildOvernightSnapshot([], { window, poolSize: 0, prefilteredCount: 0 }),
+      ...buildOvernightSnapshot([], { window, poolSize: 0, prefilteredCount: 0, marketScope }),
       sourceStatus: {
         candidateSource: "东方财富A股实时行情",
         intradaySource: "东方财富分时均价",
@@ -742,7 +786,7 @@ async function fetchOvernightScan() {
     () => fetchPool("https://push2.eastmoney.com/api/qt/clist/get")
   ]);
   const poolSize = Number(payload?.data?.total || payload?.data?.diff?.length || 0);
-  const candidateAnalysis = analyzeOvernightCandidatePayload(payload);
+  const candidateAnalysis = analyzeOvernightCandidatePayload(payload, { marketScope });
   const prefiltered = candidateAnalysis.candidates;
   const selected = prefiltered.slice(0, 40);
   const settled = await mapWithConcurrency(selected, 6, async (candidate) => {
@@ -764,7 +808,8 @@ async function fetchOvernightScan() {
     window,
     poolSize,
     prefilteredCount: prefiltered.length,
-    funnel: candidateAnalysis.funnel
+    funnel: candidateAnalysis.funnel,
+    marketScope
   });
   snapshot.sourceStatus = {
     candidateSource: "东方财富A股实时行情",
@@ -790,17 +835,212 @@ async function fetchStockProfile(rawCode) {
     if (!payload?.data) throw new Error("股票资料暂不可用");
     return payload.data;
   };
-  const item = await firstAvailable(`股票资料 ${code}`, [
-    () => fetchProfile("https://push2delay.eastmoney.com/api/qt/stock/get"),
-    () => fetchProfile("https://push2.eastmoney.com/api/qt/stock/get")
+  const organizationParams = new URLSearchParams({
+    reportName: "RPT_F10_BASIC_ORGINFO",
+    columns: "ALL",
+    filter: `(SECUCODE="${profileSecucode(code)}")`,
+    pageNumber: "1",
+    pageSize: "1",
+    source: "HSF10",
+    client: "PC"
+  });
+  const organizationRequest = requestJSON(
+    `https://datacenter.eastmoney.com/securities/api/data/v1/get?${organizationParams}`
+  ).catch(() => null);
+  const [item, organizationPayload] = await Promise.all([
+    firstAvailable(`股票资料 ${code}`, [
+      () => fetchProfile("https://push2delay.eastmoney.com/api/qt/stock/get"),
+      () => fetchProfile("https://push2.eastmoney.com/api/qt/stock/get")
+    ]),
+    organizationRequest
   ]);
+  const organization = parseCompanyOrganization(organizationPayload, {
+    name: String(item.f58 || code)
+  });
+  const rawIndustry = String(item.f100 || "").trim();
+  const organizationIndustries = String(organization?.industryPath || "")
+    .split(/[-/]/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const resolvedIndustry = rawIndustry && rawIndustry !== "-" && rawIndustry !== "未分类"
+    ? rawIndustry
+    : organizationIndustries.at(-2) || organizationIndustries.at(-1) || "未分类";
   return {
     code,
     name: String(item.f58 || code),
-    industry: String(item.f100 || "未分类"),
+    industry: resolvedIndustry,
     totalMarketCap: Number(item.f20 || 0),
     floatMarketCap: Number(item.f21 || 0),
-    asOf: new Date().toISOString()
+    asOf: new Date().toISOString(),
+    organization,
+    source: organization ? "东方财富公司资料" : "东方财富行业资料"
+  };
+}
+
+function aiSettingsPath() {
+  return path.join(app.getPath("userData"), "ai-settings.json");
+}
+
+function readAiSettingsRecord() {
+  try {
+    return JSON.parse(fs.readFileSync(aiSettingsPath(), "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function secureAiStorageAvailable() {
+  try {
+    return safeStorage.isEncryptionAvailable();
+  } catch {
+    return false;
+  }
+}
+
+function readAiApiKey(record = readAiSettingsRecord()) {
+  if (sessionAiKey) return sessionAiKey;
+  if (!record.apiKeyCipher || !secureAiStorageAvailable()) return "";
+  try {
+    return safeStorage.decryptString(Buffer.from(record.apiKeyCipher, "base64"));
+  } catch {
+    return "";
+  }
+}
+
+function writeAiSettingsRecord(record) {
+  const destination = aiSettingsPath();
+  const temporary = `${destination}.tmp`;
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  fs.writeFileSync(temporary, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
+  fs.renameSync(temporary, destination);
+}
+
+function getPublicAiSettings() {
+  const record = readAiSettingsRecord();
+  return publicAiSettings(record.settings || DEFAULT_AI_SETTINGS, {
+    hasApiKey: Boolean(readAiApiKey(record)),
+    secureStorage: secureAiStorageAvailable()
+  });
+}
+
+function saveAiSettings(value = {}) {
+  const record = readAiSettingsRecord();
+  const settings = normalizeAiSettings(value);
+  const apiKey = String(value.apiKey || "").trim();
+  if (apiKey) {
+    if (apiKey.length < 8 || apiKey.length > 512) throw new Error("API Key 长度不正确");
+    if (secureAiStorageAvailable()) {
+      record.apiKeyCipher = safeStorage.encryptString(apiKey).toString("base64");
+      sessionAiKey = "";
+    } else {
+      delete record.apiKeyCipher;
+      sessionAiKey = apiKey;
+    }
+  }
+  record.settings = settings;
+  writeAiSettingsRecord(record);
+  return getPublicAiSettings();
+}
+
+function deleteAiApiKey() {
+  const record = readAiSettingsRecord();
+  delete record.apiKeyCipher;
+  sessionAiKey = "";
+  record.settings = normalizeAiSettings(record.settings || DEFAULT_AI_SETTINGS);
+  writeAiSettingsRecord(record);
+  return getPublicAiSettings();
+}
+
+function sanitizedAiPayload(payload, includePosition) {
+  const clone = JSON.parse(JSON.stringify(payload || {}));
+  if (clone.facts && !includePosition) delete clone.facts.position;
+  if (clone.previousSnapshot?.facts && !includePosition) {
+    delete clone.previousSnapshot.facts.position;
+  }
+  if (clone.previousSnapshot && !includePosition) {
+    delete clone.previousSnapshot.report;
+  }
+  if (JSON.stringify(clone).length > 40000) {
+    throw new Error("追踪事实包过大，请减少历史内容后重试");
+  }
+  return clone;
+}
+
+async function postAiResponse(settings, apiKey, body) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45000);
+  try {
+    const response = await net.fetch(responsesUrl(settings.baseUrl), {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "User-Agent": `HengCe/${app.getVersion()}`
+      },
+      body: JSON.stringify(body)
+    });
+    const raw = await response.text();
+    let payload = {};
+    try {
+      payload = raw ? JSON.parse(raw) : {};
+    } catch {
+      payload = {};
+    }
+    if (!response.ok) throw new Error(safeApiError(response.status, payload));
+    return payload;
+  } catch (error) {
+    if (error?.name === "AbortError") throw new Error("AI 分析超时，请检查网络或稍后重试");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function testAiConnection() {
+  const record = readAiSettingsRecord();
+  const settings = normalizeAiSettings(record.settings || DEFAULT_AI_SETTINGS);
+  const apiKey = readAiApiKey(record);
+  if (!apiKey) throw new Error("请先填写并保存 API Key");
+  await postAiResponse(settings, apiKey, {
+    model: settings.model,
+    store: false,
+    max_output_tokens: 32,
+    instructions: "这是连接测试。请只回复：连接成功。",
+    input: "测试衡策 AI 追踪连接"
+  });
+  return { ok: true, model: settings.model, endpoint: new URL(settings.baseUrl).host };
+}
+
+async function runAiTracking(value = {}) {
+  const record = readAiSettingsRecord();
+  const settings = normalizeAiSettings(record.settings || DEFAULT_AI_SETTINGS);
+  const apiKey = readAiApiKey(record);
+  if (!apiKey) throw new Error("尚未配置 API Key，可先使用本地量化追踪摘要");
+  const clean = sanitizedAiPayload(value, settings.sendHoldings);
+  if (!/^\d{6}$/.test(String(clean.facts?.code || ""))) {
+    throw new Error("追踪标的格式不正确");
+  }
+  const response = await postAiResponse(settings, apiKey, {
+    model: settings.model,
+    store: false,
+    max_output_tokens: 1800,
+    instructions: buildTrackingInstructions(),
+    input: buildTrackingInput(clean.facts, clean.previousSnapshot || null),
+    text: {
+      format: {
+        type: "json_schema",
+        name: "hengce_tracking_report",
+        strict: true,
+        schema: TRACKING_REPORT_SCHEMA
+      }
+    }
+  });
+  return {
+    source: "ai",
+    model: settings.model,
+    report: normalizeTrackingReport(parseJsonResponse(response))
   };
 }
 
@@ -1074,9 +1314,11 @@ function createWindow() {
   });
   const captureView = String(process.env.HENGCE_CAPTURE_VIEW || "").trim();
   const capturePlatform = String(process.env.HENGCE_CAPTURE_PLATFORM || "").trim();
+  const captureStock = String(process.env.HENGCE_CAPTURE_STOCK || "").trim();
   const captureQuery = {};
   if (captureView) captureQuery.view = captureView;
   if (capturePlatform) captureQuery.platform = capturePlatform;
+  if (/^\d{6}$/.test(captureStock)) captureQuery.stock = captureStock;
   window.loadFile(path.join(__dirname, "..", "src", "index.html"), {
     query: Object.keys(captureQuery).length ? captureQuery : undefined
   });
@@ -1122,7 +1364,12 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     cachedRequest("recommendations", 600000, () => fetchRecommendations(), options.force)
   );
   ipcMain.handle("market:overnight", (_, options = {}) =>
-    cachedRequest("overnight", 15000, () => fetchOvernightScan(), options.force)
+    cachedRequest(
+      `overnight:${normalizeMarketScope(options.marketScope)}`,
+      15000,
+      () => fetchOvernightScan(options),
+      options.force
+    )
   );
   ipcMain.handle("market:profile", (_, code, options = {}) =>
     cachedRequest(`profile:${code}`, 1800000, () => fetchStockProfile(code), options.force)
@@ -1147,6 +1394,11 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     updateTrayMenu();
     return { minimizeToTray: minimizeToTrayEnabled };
   });
+  ipcMain.handle("ai:settings", () => getPublicAiSettings());
+  ipcMain.handle("ai:settings-save", (_, settings = {}) => saveAiSettings(settings));
+  ipcMain.handle("ai:key-delete", () => deleteAiApiKey());
+  ipcMain.handle("ai:test", () => testAiConnection());
+  ipcMain.handle("ai:track", (_, payload = {}) => runAiTracking(payload));
 
   createWindow();
   createWindowsTray();

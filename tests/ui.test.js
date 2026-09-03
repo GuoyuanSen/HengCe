@@ -95,10 +95,18 @@ test("hotspot boards expand inline and stocks open the analysis view", () => {
 test("analysis supports intraday and daily chart modes", () => {
   assert.match(preload, /intraday:\s*\(code, options/);
   assert.match(main, /ipcMain\.handle\("market:intraday"/);
+  assert.match(main, /web\.ifzq\.gtimg\.cn\/appstock\/app\/minute\/query/);
+  assert.match(main, /push2\.eastmoney\.com\/api\/qt\/stock\/trends2\/get/);
   assert.match(html, /data-chart-mode="intraday"/);
+  assert.match(html, /id="intraday-warning"/);
   assert.match(html, /id="trade-plan"/);
   assert.match(html, /id="observation-plan"/);
   assert.match(renderer, /buildObservationPlan/);
+  assert.match(html, /id="quote-industry-badge"/);
+  assert.match(html, /class="company-profile-section"/);
+  assert.match(renderer, /function renderCompanyProfile/);
+  assert.match(main, /RPT_F10_BASIC_ORGINFO/);
+  assert.match(main, /parseCompanyOrganization/);
 });
 
 test("A-share recommendations are a standalone lazy-loaded view", () => {
@@ -118,8 +126,10 @@ test("overnight tail scan is a standalone timed view", () => {
   assert.match(html, /data-view="overnight"/);
   assert.match(html, /id="overnight-view"/);
   assert.match(html, /14:30–14:50/);
+  assert.match(html, /id="overnight-market-scope"/);
+  assert.match(html, /value="main" selected>仅沪深主板/);
   assert.match(renderer, /if \(view === "overnight"\) loadOvernight\(\)/);
-  assert.match(renderer, /window\.hengce\.overnight\(\{ force \}\)/);
+  assert.match(renderer, /window\.hengce\.overnight\(\{[\s\S]*?marketScope:\s*state\.overnightMarketScope/);
   assert.match(renderer, /没有信号就保持空仓/);
   assert.match(html, /id="overnight-funnel"/);
   assert.match(html, /id="overnight-badge"/);
@@ -139,6 +149,24 @@ test("watchlist alerts and portfolio risk are connected to live market data", ()
   assert.match(main, /ipcMain\.handle\("system:notify"/);
   assert.match(renderer, /function loadWatchlist/);
   assert.match(renderer, /function updatePortfolioRisk/);
+});
+
+test("AI tracking uses encrypted main-process settings and keeps a local fallback", () => {
+  assert.match(html, /data-view="ai"/);
+  assert.match(html, /id="ai-view"/);
+  assert.match(html, /id="ai-api-key"[\s\S]*?type="password"/);
+  assert.match(html, /src="ai_tracking\.js"/);
+  assert.match(preload, /aiSettings:\s*\(\)/);
+  assert.match(preload, /trackWithAi:\s*\(payload\)/);
+  assert.match(main, /\bsafeStorage\b/);
+  assert.match(main, /safeStorage\.encryptString/);
+  assert.match(main, /ipcMain\.handle\("ai:settings"/);
+  assert.match(main, /ipcMain\.handle\("ai:track"/);
+  assert.match(main, /delete clone\.facts\.position/);
+  assert.match(renderer, /buildLocalTrackingReport/);
+  assert.match(renderer, /hengce\.aiTracking\.v1/);
+  assert.match(renderer, /AI 解释未完成[\s\S]*已保留本地量化摘要/);
+  assert.doesNotMatch(renderer, /localStorage\.setItem\([^\n]*apiKey/i);
 });
 
 test("market views expose provenance and stale-data protection", () => {
