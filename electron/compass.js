@@ -8,11 +8,11 @@ const GLOBAL_MARKETS = Object.freeze([
 ]);
 
 const STYLE_INDEX_DEFINITIONS = Object.freeze([
-  Object.freeze({ code: "000300", name: "沪深300", style: "大盘核心", secid: "1.000300", tencentSymbol: "sh000300" }),
-  Object.freeze({ code: "000016", name: "上证50", style: "大盘价值", secid: "1.000016", tencentSymbol: "sh000016" }),
-  Object.freeze({ code: "000905", name: "中证500", style: "中盘", secid: "1.000905", tencentSymbol: "sh000905" }),
-  Object.freeze({ code: "000852", name: "中证1000", style: "小盘", secid: "1.000852", tencentSymbol: "sh000852" }),
-  Object.freeze({ code: "000688", name: "科创50", style: "科技成长", secid: "1.000688", tencentSymbol: "sh000688" })
+  Object.freeze({ code: "000300", name: "沪深300", style: "大盘核心", componentType: "1", secid: "1.000300", tencentSymbol: "sh000300" }),
+  Object.freeze({ code: "000016", name: "上证50", style: "大盘价值", componentType: "2", secid: "1.000016", tencentSymbol: "sh000016" }),
+  Object.freeze({ code: "000905", name: "中证500", style: "中盘", componentType: "3", secid: "1.000905", tencentSymbol: "sh000905" }),
+  Object.freeze({ code: "000852", name: "中证1000", style: "小盘", componentType: "7", secid: "1.000852", tencentSymbol: "sh000852" }),
+  Object.freeze({ code: "000688", name: "科创50", style: "科技成长", componentType: "4", secid: "1.000688", tencentSymbol: "sh000688" })
 ]);
 
 function finite(value) {

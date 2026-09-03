@@ -975,6 +975,36 @@ h2 {
   font-style: normal;
 }
 
+.style-representatives {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+}
+
+.style-representatives > span {
+  width: 100%;
+  color: var(--faint);
+  font-size: 9px;
+}
+
+.style-representatives button {
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--text);
+  background: #f7f8fa;
+  font-size: 9px;
+}
+
+.style-representatives button:hover {
+  border-color: #a9bde8;
+  color: var(--blue);
+  background: #f1f5ff;
+}
+
 .compass-signals .finding-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

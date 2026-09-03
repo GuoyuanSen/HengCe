@@ -76,6 +76,9 @@ test("market compass is a standalone lazy-loaded global and domestic view", () =
   assert.match(html, /data-view="compass"/);
   assert.match(html, /id="compass-view"/);
   assert.match(html, /id="compass-styles"/);
+  assert.match(main, /RPT_INDEX_TS_COMPONENT/);
+  assert.match(renderer, /style-representatives/);
+  assert.match(renderer, /代表成分按公开指数权重或流通规模展示/);
   assert.match(renderer, /if \(view === "compass"\) loadCompass\(\)/);
   assert.match(renderer, /window\.hengce\.compass\(\{ force \}\)/);
   assert.match(renderer, /风向标描述市场环境/);

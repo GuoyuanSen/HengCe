@@ -105,11 +105,11 @@ if (!window.hengce && isBrowserPreview) {
         { code: "399006", name: "创业板指", price: 2248.53, percentChange: 0.67 }
       ],
       styleMarkets: [
-        { code: "000300", name: "沪深300", style: "大盘核心", price: 4573.02, percentChange: 0.55 },
-        { code: "000016", name: "上证50", style: "大盘价值", price: 2930.4, percentChange: 0.55 },
-        { code: "000905", name: "中证500", style: "中盘", price: 7761.83, percentChange: 0.42 },
-        { code: "000852", name: "中证1000", style: "小盘", price: 7599.87, percentChange: 0.21 },
-        { code: "000688", name: "科创50", style: "科技成长", price: 1615.03, percentChange: -0.16 }
+        { code: "000300", name: "沪深300", style: "大盘核心", price: 4573.02, percentChange: 0.55, representatives: [{ code: "300308", name: "中际旭创" }, { code: "300750", name: "宁德时代" }, { code: "600519", name: "贵州茅台" }] },
+        { code: "000016", name: "上证50", style: "大盘价值", price: 2930.4, percentChange: 0.55, representatives: [{ code: "600519", name: "贵州茅台" }, { code: "601318", name: "中国平安" }, { code: "601899", name: "紫金矿业" }] },
+        { code: "000905", name: "中证500", style: "中盘", price: 7761.83, percentChange: 0.42, representatives: [{ code: "688498", name: "源杰科技" }, { code: "300604", name: "长川科技" }, { code: "688347", name: "华虹公司" }] },
+        { code: "000852", name: "中证1000", style: "小盘", price: 7599.87, percentChange: 0.21, representatives: [{ code: "301217", name: "铜冠铜箔" }, { code: "688519", name: "南亚新材" }, { code: "002428", name: "云南锗业" }] },
+        { code: "000688", name: "科创50", style: "科技成长", price: 1615.03, percentChange: -0.16, representatives: [{ code: "688256", name: "寒武纪" }, { code: "688012", name: "中微公司" }, { code: "688981", name: "中芯国际" }] }
       ],
       signals: ["美股科技方向温和回暖", "港股科技情绪中性", "A股主要指数维持震荡", "大盘核心相对占优，科技成长偏弱"],
       sourceStatus: { globalSource: "浏览器演示数据", domesticSource: "浏览器演示数据", styleSource: "浏览器演示数据", loaded: 14, expected: 14, partial: false },
@@ -1453,8 +1453,15 @@ function renderCompass() {
       <span>${escapeHTML(item.style || item.name)}</span>
       <strong>${escapeHTML(item.name)} <em class="${directionClass(item.percentChange)}">${percent(item.percentChange)}</em></strong>
       <small>${number(item.price)} · ${escapeHTML(item.source || "公开行情")}</small>
+      <div class="style-representatives">
+        <span>代表成分</span>
+        ${(item.representatives || []).map((stock) => `<button data-code="${escapeHTML(stock.code)}" title="进入 ${escapeHTML(stock.name)} 分析">${escapeHTML(stock.name)}</button>`).join("") || '<small>成分数据暂缺</small>'}
+      </div>
     </div>
   `).join("") || '<span class="muted">股票风格指数暂不可用</span>';
+  $$(".style-representatives button").forEach((button) =>
+    button.addEventListener("click", () => analyzeStock(button.dataset.code))
+  );
   $("#compass-signal-list").innerHTML = (snapshot.signals || []).map((signal) => `
     <div class="finding positive"><i data-lucide="navigation"></i><span>${escapeHTML(signal)}</span></div>
   `).join("");
@@ -1466,7 +1473,7 @@ function renderCompass() {
     minute: "2-digit"
   });
   $("#compass-note").textContent =
-    `数据时间 ${timestamp} · 全球：${snapshot.sourceStatus?.globalSource || "暂缺"} · A股：${snapshot.sourceStatus?.domesticSource || "暂缺"} · 风格：${snapshot.sourceStatus?.styleSource || "暂缺"}${snapshot.sourceStatus?.partial ? " · 部分数据暂缺" : ""}。${snapshot.note || "风向标不构成投资建议。"}`;
+    `数据时间 ${timestamp} · 全球：${snapshot.sourceStatus?.globalSource || "暂缺"} · A股：${snapshot.sourceStatus?.domesticSource || "暂缺"} · 风格及代表成分：${snapshot.sourceStatus?.styleSource || "暂缺"}${snapshot.sourceStatus?.partial ? " · 部分数据暂缺" : ""}。代表成分按公开指数权重或流通规模展示，不代表推荐。${snapshot.note || "风向标不构成投资建议。"}`;
   refreshIcons();
 }
 

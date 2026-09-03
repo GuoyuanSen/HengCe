@@ -22,6 +22,7 @@ const { buildHotspotSnapshot, parseBoardMembersPayload } = require("./hotspots.j
 const { analyze } = require("../src/engine.js");
 const {
   buildRecommendationSnapshot,
+  isRiskName,
   parseCandidatePayload,
   validateHistoricalSignals
 } = require("./recommendations.js");
@@ -336,6 +337,37 @@ async function fetchIndices() {
     .map((item) => item.value);
 }
 
+async function fetchStyleRepresentatives(componentType) {
+  const params = new URLSearchParams({
+    reportName: "RPT_INDEX_TS_COMPONENT",
+    columns: "TYPE,SECURITY_CODE,SECURITY_NAME_ABBR,WEIGHT,FREE_CAP,CHANGE_RATE,INDUSTRY,MAXTRADEDATE",
+    filter: `(TYPE="${componentType}")`,
+    sortColumns: "WEIGHT,FREE_CAP",
+    sortTypes: "-1,-1",
+    pageNumber: "1",
+    pageSize: "8",
+    source: "WEB",
+    client: "WEB"
+  });
+  const payload = await requestJSON(
+    `https://datacenter-web.eastmoney.com/api/data/v1/get?${params}`
+  );
+  const rows = payload?.result?.data;
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map((item) => ({
+      code: String(item.SECURITY_CODE || "").trim(),
+      name: String(item.SECURITY_NAME_ABBR || "").trim(),
+      weight: item.WEIGHT != null && Number.isFinite(Number(item.WEIGHT)) ? Number(item.WEIGHT) : null,
+      freeCap: item.FREE_CAP != null && Number.isFinite(Number(item.FREE_CAP)) ? Number(item.FREE_CAP) : null,
+      percentChange: item.CHANGE_RATE != null && Number.isFinite(Number(item.CHANGE_RATE)) ? Number(item.CHANGE_RATE) : null,
+      industry: String(item.INDUSTRY || "未分类").trim() || "未分类",
+      asOf: String(item.MAXTRADEDATE || "").slice(0, 10)
+    }))
+    .filter((item) => /^\d{6}$/.test(item.code) && item.name && !isRiskName(item.name))
+    .slice(0, 3);
+}
+
 async function fetchMarketCompass() {
   const symbols = GLOBAL_MARKETS.map((item) => item.symbol).join(",");
   const [globalResult, domesticResult, styleResult] = await Promise.allSettled([
@@ -345,8 +377,11 @@ async function fetchMarketCompass() {
     }).then((text) => parseTencentGlobalQuotes(text)),
     fetchIndices(),
     Promise.allSettled(
-      STYLE_INDEX_DEFINITIONS.map(async ({ code, name, style, secid, tencentSymbol }) => {
-        const quote = await fetchQuoteWithFallback(code, { name, secid, tencentSymbol });
+      STYLE_INDEX_DEFINITIONS.map(async ({ code, name, style, componentType, secid, tencentSymbol }) => {
+        const [quote, representatives] = await Promise.all([
+          fetchQuoteWithFallback(code, { name, secid, tencentSymbol }),
+          fetchStyleRepresentatives(componentType).catch(() => [])
+        ]);
         return {
           code,
           name,
@@ -354,7 +389,8 @@ async function fetchMarketCompass() {
           price: quote.price,
           percentChange: quote.percentChange,
           timestamp: quote.timestamp,
-          source: quote.source
+          source: quote.source,
+          representatives
         };
       })
     ).then((results) => results.filter((item) => item.status === "fulfilled").map((item) => item.value))
