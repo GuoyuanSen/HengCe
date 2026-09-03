@@ -64,7 +64,19 @@ const {
   responsesUrl,
   safeApiError
 } = require("./ai_service.js");
-const { parseCompanyOrganization, profileSecucode } = require("./company.js");
+const { parseCompanyOrganization, parseStockAnnouncements, profileSecucode } = require("./company.js");
+const {
+  attachMarketConfirmation,
+  buildIntelligenceSnapshot,
+  parseSinaRoll,
+  parseWallstreetLives
+} = require("./intelligence.js");
+const {
+  EVENT_INTERPRETATION_SCHEMA,
+  eventInterpretationInput,
+  eventInterpretationInstructions,
+  normalizeEventInterpretation
+} = require("../src/intelligence.js");
 
 const APP_ID = "com.guoyuansen.hengce";
 const FRIENDLY_MARKET_ERROR = "行情服务暂时无响应，请检查网络后重试。";
@@ -74,6 +86,10 @@ const TENCENT_HEADERS = {
 };
 const RELEASE_API_URL =
   "https://api.github.com/repos/GuoyuanSen/HengCe/releases/latest";
+const isolatedUserData = String(process.env.HENGCE_USER_DATA_DIR || "").trim();
+if (isolatedUserData && path.isAbsolute(isolatedUserData)) {
+  app.setPath("userData", isolatedUserData);
+}
 let downloadedUpdate = null;
 let updateDownloadActive = false;
 let mainWindow = null;
@@ -877,6 +893,89 @@ async function fetchStockProfile(rawCode) {
   };
 }
 
+async function fetchStockAnnouncements(rawCode) {
+  const code = validatedCode(rawCode);
+  const params = new URLSearchParams({
+    sr: "-1",
+    page_size: "10",
+    page_index: "1",
+    ann_type: "A",
+    client_source: "web",
+    stock_list: code,
+    f_node: "0",
+    s_node: "0"
+  });
+  const payload = await requestJSON(
+    `https://np-anotice-stock.eastmoney.com/api/security/ann?${params}`,
+    { headers: { Referer: "https://data.eastmoney.com/" } }
+  );
+  return {
+    code,
+    asOf: new Date().toISOString(),
+    source: "东方财富公开公告",
+    announcements: parseStockAnnouncements(payload, code)
+  };
+}
+
+async function fetchIntelligenceEvents() {
+  const requests = await Promise.allSettled([
+    requestJSON(
+      "https://api-one.wallstcn.com/apiv1/content/lives?channel=global-channel&client=pc&limit=60",
+      {
+        headers: { Referer: "https://wallstreetcn.com/" },
+        timeoutMs: 6500,
+        attempts: 2
+      }
+    ),
+    requestJSON(
+      "https://feed.mix.sina.com.cn/api/roll/get?pageid=153&lid=2516&k=&num=50&page=1",
+      {
+        headers: { Referer: "https://finance.sina.com.cn/" },
+        timeoutMs: 6500,
+        attempts: 2
+      }
+    )
+  ]);
+  const wallstreet = requests[0].status === "fulfilled"
+    ? parseWallstreetLives(requests[0].value)
+    : [];
+  const sina = requests[1].status === "fulfilled"
+    ? parseSinaRoll(requests[1].value)
+    : [];
+  if (!wallstreet.length && !sina.length) throw new Error(FRIENDLY_MARKET_ERROR);
+  return {
+    events: [...wallstreet, ...sina],
+    sourceStatus: {
+      sources: [
+        { name: "华尔街见闻7×24", available: wallstreet.length > 0, count: wallstreet.length },
+        { name: "新浪财经公开资讯", available: sina.length > 0, count: sina.length }
+      ],
+      partial: !wallstreet.length || !sina.length,
+      note: "仅保留公开标题、摘要、时间与原文链接；不抓取或转载付费正文"
+    }
+  };
+}
+
+async function fetchMarketIntelligence(options = {}) {
+  const [feed, hotspots] = await Promise.all([
+    cachedRequest(
+      "market-intelligence-events",
+      60000,
+      fetchIntelligenceEvents,
+      options.force
+    ),
+    cachedRequest("hotspots", 120000, () => fetchHotspots(), options.force).catch(() => null)
+  ]);
+  const snapshot = buildIntelligenceSnapshot(feed.events, {
+    asOf: new Date().toISOString(),
+    previousThemes: Array.isArray(options.previousThemes)
+      ? options.previousThemes.slice(0, 20)
+      : [],
+    sourceStatus: feed.sourceStatus
+  });
+  return attachMarketConfirmation(snapshot, hotspots);
+}
+
 function aiSettingsPath() {
   return path.join(app.getPath("userData"), "ai-settings.json");
 }
@@ -1041,6 +1140,44 @@ async function runAiTracking(value = {}) {
     source: "ai",
     model: settings.model,
     report: normalizeTrackingReport(parseJsonResponse(response))
+  };
+}
+
+async function runAiIntelligence(value = {}) {
+  const record = readAiSettingsRecord();
+  const settings = normalizeAiSettings(record.settings || DEFAULT_AI_SETTINGS);
+  const apiKey = readAiApiKey(record);
+  if (!apiKey) throw new Error("尚未配置 API Key，可先使用本地事件解读");
+  const clean = JSON.parse(JSON.stringify(value || {}));
+  if (!settings.sendHoldings) delete clean.portfolioImpact;
+  if (!clean.event?.title || !clean.event?.publishedAt || !clean.event?.source) {
+    throw new Error("事件事实不完整，无法生成 AI 解读");
+  }
+  if (JSON.stringify(clean).length > 30000) throw new Error("事件事实包过大，请稍后重试");
+  const response = await postAiResponse(settings, apiKey, {
+    model: settings.model,
+    store: false,
+    max_output_tokens: 1600,
+    instructions: eventInterpretationInstructions(),
+    input: eventInterpretationInput(
+      clean.event,
+      clean.theme || null,
+      clean.marketContext || null,
+      clean.portfolioImpact || []
+    ),
+    text: {
+      format: {
+        type: "json_schema",
+        name: "hengce_event_interpretation",
+        strict: true,
+        schema: EVENT_INTERPRETATION_SCHEMA
+      }
+    }
+  });
+  return {
+    source: "ai",
+    model: settings.model,
+    report: normalizeEventInterpretation(parseJsonResponse(response))
   };
 }
 
@@ -1325,7 +1462,8 @@ function createWindow() {
 }
 
 app.setAppUserModelId(APP_ID);
-const hasSingleInstanceLock = app.requestSingleInstanceLock();
+const captureMode = Boolean(process.env.HENGCE_CAPTURE_PATH);
+const hasSingleInstanceLock = captureMode || app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
   app.quit();
 } else {
@@ -1374,6 +1512,12 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   ipcMain.handle("market:profile", (_, code, options = {}) =>
     cachedRequest(`profile:${code}`, 1800000, () => fetchStockProfile(code), options.force)
   );
+  ipcMain.handle("market:announcements", (_, code, options = {}) =>
+    cachedRequest(`announcements:${code}`, 1800000, () => fetchStockAnnouncements(code), options.force)
+  );
+  ipcMain.handle("market:intelligence", (_, options = {}) =>
+    fetchMarketIntelligence(options)
+  );
   ipcMain.handle("system:notify", (_, title, body) => {
     if (!Notification.isSupported()) return false;
     new Notification({ title: String(title), body: String(body) }).show();
@@ -1399,6 +1543,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   ipcMain.handle("ai:key-delete", () => deleteAiApiKey());
   ipcMain.handle("ai:test", () => testAiConnection());
   ipcMain.handle("ai:track", (_, payload = {}) => runAiTracking(payload));
+  ipcMain.handle("ai:intelligence", (_, payload = {}) => runAiIntelligence(payload));
 
   createWindow();
   createWindowsTray();

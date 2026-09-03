@@ -70,6 +70,31 @@ test("daily hotspots are a standalone lazy-loaded view", () => {
   assert.match(renderer, /不等同于真实机构持仓变化/);
 });
 
+test("market intelligence combines public events, lifecycle, holdings impact and local AI fallback", () => {
+  assert.match(html, /data-view="intelligence"/);
+  assert.match(html, /id="intelligence-view"/);
+  assert.match(html, /id="intelligence-themes"/);
+  assert.match(html, /id="intelligence-events"/);
+  assert.match(html, /id="intelligence-impacts"/);
+  assert.match(html, /id="intelligence-briefs"/);
+  assert.match(html, /value="bookmarked">我的收藏/);
+  assert.match(preload, /intelligence:\s*\(options/);
+  assert.match(preload, /interpretEvent:\s*\(payload\)/);
+  assert.match(main, /ipcMain\.handle\("market:intelligence"/);
+  assert.match(main, /ipcMain\.handle\("ai:intelligence"/);
+  assert.match(main, /api-one\.wallstcn\.com/);
+  assert.match(main, /feed\.mix\.sina\.com\.cn/);
+  assert.match(renderer, /localEventInterpretation\(event/);
+  assert.match(renderer, /if \(!state\.aiConfig\?\.hasApiKey/);
+  assert.match(renderer, /AI未完成，已保留本地结果/);
+  assert.match(renderer, /scheduleIntelligenceRefresh/);
+  assert.match(renderer, /hengce\.intelligence\.snapshot\.v1/);
+  assert.match(renderer, /当前显示最近一次成功快照/);
+  assert.match(renderer, /衡策持仓情报/);
+  assert.match(renderer, /hengce\.intelligence\.bookmarks\.v1/);
+  assert.match(styles, /\.lifecycle-phase\.warming/);
+});
+
 test("market compass is a standalone lazy-loaded global and domestic view", () => {
   assert.match(preload, /compass:\s*\(options/);
   assert.match(main, /ipcMain\.handle\("market:compass"/);
@@ -107,6 +132,10 @@ test("analysis supports intraday and daily chart modes", () => {
   assert.match(renderer, /function renderCompanyProfile/);
   assert.match(main, /RPT_F10_BASIC_ORGINFO/);
   assert.match(main, /parseCompanyOrganization/);
+  assert.match(preload, /announcements:\s*\(code, options/);
+  assert.match(main, /ipcMain\.handle\("market:announcements"/);
+  assert.match(html, /id="company-announcements"/);
+  assert.match(renderer, /function renderCompanyAnnouncements/);
 });
 
 test("A-share recommendations are a standalone lazy-loaded view", () => {
@@ -205,8 +234,10 @@ test("Windows can minimize to tray while keeping background work alive", () => {
   assert.match(main, /尾盘扫描和观察提醒会继续工作/);
   assert.match(main, /ipcMain\.handle\("system:window-preferences"/);
   assert.match(main, /HENGCE_CAPTURE_PLATFORM/);
+  assert.match(main, /HENGCE_USER_DATA_DIR/);
   assert.match(main, /HENGCE_TRAY_SMOKE_PATH/);
   assert.match(main, /requestSingleInstanceLock/);
+  assert.match(main, /captureMode \|\| app\.requestSingleInstanceLock/);
   assert.match(main, /app\.on\("second-instance", showMainWindow\)/);
   assert.match(preload, /setWindowPreferences/);
   assert.match(html, /id="minimize-to-tray"/);
@@ -254,6 +285,10 @@ test("daily chart renders candlesticks and technical sub-panels", () => {
   assert.match(renderer, /function macdSeries/);
   assert.match(renderer, /fillRect\(x - candleWidth \/ 2/);
   assert.match(styles, /\.chart-wrap\.daily-chart/);
+  assert.match(html, /id="strategy-observation-card"/);
+  assert.match(renderer, /validationLength/);
+  assert.match(renderer, /后段验证/);
+  assert.match(renderer, /前后段均未调参/);
 });
 
 test("sidebar exposes version and updates while holdings accept name search", () => {

@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { parseCompanyOrganization, profileSecucode } = require("../electron/company.js");
+const { parseCompanyOrganization, parseStockAnnouncements, profileSecucode } = require("../electron/company.js");
 
 test("company profile maps exchange suffixes and public business fields", () => {
   assert.equal(profileSecucode("688239"), "688239.SH");
@@ -19,4 +19,19 @@ test("company profile maps exchange suffixes and public business fields", () => 
   assert.equal(profile.companyProfile, "公司简介 包含换行");
   assert.equal(profile.employees, 939);
   assert.equal(profile.listedAt, "2021-07-05");
+});
+
+test("company announcements keep public metadata and classify risk without copying full text", () => {
+  const rows = parseStockAnnouncements({ data: { list: [{
+    art_code: "AN20260001",
+    codes: [{ stock_code: "603039", short_name: "泛微网络" }],
+    columns: [{ column_name: "股东减持" }],
+    notice_date: "2026-08-28 00:00:00",
+    title: "泛微网络:董事及高级管理人员减持股份计划公告"
+  }] } }, "603039");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].kind.key, "holding");
+  assert.equal(rows[0].publishedAt, "2026-08-28");
+  assert.match(rows[0].url, /AN20260001/);
+  assert.doesNotMatch(JSON.stringify(rows[0]), /fullText|正文/);
 });

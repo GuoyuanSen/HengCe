@@ -10,6 +10,15 @@
 
 No source code from these projects is included in HengCe. The links are retained for attribution and continued study.
 
+## Public information links
+
+The market-intelligence view reads publicly accessible feed metadata from
+[WallstreetCN](https://wallstreetcn.com/live) and
+[Sina Finance](https://finance.sina.com.cn/). HengCe keeps only short public
+summaries, timestamps, source names, and links back to the original pages. It
+does not bundle, mirror, or redistribute paid article or terminal content, and
+is not affiliated with either provider.
+
 ## Bundled installer translation
 
 The Windows installer includes the official `ChineseSimplified.isl` language

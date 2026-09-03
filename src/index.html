@@ -31,6 +31,11 @@
             <i data-lucide="flame"></i>
             <span>每日热点</span>
           </button>
+          <button class="nav-item" data-view="intelligence">
+            <i data-lucide="radio-tower"></i>
+            <span>市场情报</span>
+            <span id="intelligence-badge" class="nav-badge hidden">0</span>
+          </button>
           <button class="nav-item" data-view="compass">
             <i data-lucide="compass"></i>
             <span>市场风向标</span>
@@ -163,6 +168,7 @@
                 <span class="spinner"></span><span>正在读取公司与业务资料</span>
               </div>
               <div id="company-profile-content" class="company-profile-content hidden"></div>
+              <div id="company-announcements" class="company-announcements"></div>
             </section>
 
             <section class="valuation-section">
@@ -309,6 +315,76 @@
               </div>
               <p id="hotspots-note" class="hotspots-note"></p>
             </section>
+          </div>
+        </section>
+
+        <section id="intelligence-view" class="view">
+          <div class="page-heading">
+            <div>
+              <h1>市场情报</h1>
+              <p>公开快讯去重、热点生命周期、持仓影响与可验证的事件解读</p>
+            </div>
+            <button id="refresh-intelligence" class="icon-button" title="刷新市场情报">
+              <i data-lucide="refresh-cw"></i>
+            </button>
+          </div>
+          <div id="intelligence-error" class="error-banner hidden"></div>
+          <div id="intelligence-loading" class="loading-state">
+            <span class="spinner"></span>
+            <p>正在合并公开快讯并计算热点生命周期</p>
+          </div>
+          <div id="intelligence-content" class="hidden">
+            <section id="intelligence-summary" class="hotspots-summary"></section>
+            <section class="intelligence-filters" aria-label="市场情报筛选">
+              <label><span>生命周期</span><select id="intelligence-phase"><option value="all">全部阶段</option><option value="emerging">萌芽</option><option value="warming">升温</option><option value="hot">高热</option><option value="diverging">分化</option><option value="declining">衰退</option></select></label>
+              <label><span>重要度</span><select id="intelligence-importance"><option value="all">全部事件</option><option value="important">仅重要</option><option value="focus">关注及以上</option><option value="bookmarked">我的收藏</option></select></label>
+              <label><span>方向</span><select id="intelligence-sentiment"><option value="all">全部方向</option><option value="positive">偏积极</option><option value="negative">偏谨慎</option><option value="mixed">存在分歧</option><option value="neutral">中性</option></select></label>
+              <div><span>当前结果</span><strong id="intelligence-filter-count">0 条</strong></div>
+            </section>
+            <div id="intelligence-ai-note" class="ai-config-banner hidden"></div>
+            <section class="intelligence-lifecycle-section">
+              <div class="section-heading">
+                <div><h2>热点生命周期</h2><span>新闻热度只作辅助，阶段同时考虑重要度、时效和前后变化</span></div>
+              </div>
+              <div id="intelligence-themes" class="intelligence-themes"></div>
+            </section>
+            <section class="intelligence-layout">
+              <div class="intelligence-feed-column">
+                <div class="section-heading">
+                  <div><h2>事件流</h2><span>只展示标题、公开摘要、时间和原文链接</span></div>
+                </div>
+                <div id="intelligence-events" class="intelligence-events"></div>
+              </div>
+              <aside class="intelligence-side-column">
+                <section>
+                  <div class="section-heading"><div><h2>持仓与观察影响</h2><span>相关不等于因果，更不等于推荐</span></div></div>
+                  <div id="intelligence-impacts" class="intelligence-impacts"></div>
+                </section>
+                <section>
+                  <div class="section-heading"><div><h2>今日简报</h2><span>盘前、午间、收盘三个时间窗口</span></div></div>
+                  <div id="intelligence-briefs" class="intelligence-briefs"></div>
+                </section>
+                <section>
+                  <div class="section-heading"><div><h2>情报助手</h2><span>围绕当前事件和持仓回答固定问题</span></div></div>
+                  <div class="intelligence-question-buttons">
+                    <button data-intelligence-question="focus">今日重点</button>
+                    <button data-intelligence-question="portfolio">持仓相关</button>
+                    <button data-intelligence-question="risk">主要风险</button>
+                    <button data-intelligence-question="divergence">消息/量价背离</button>
+                  </div>
+                  <div id="intelligence-answer" class="intelligence-answer"></div>
+                </section>
+                <section>
+                  <div class="section-heading"><div><h2>宏观脉搏</h2><span>宏观事件与现有市场风向标交叉观察</span></div></div>
+                  <div id="intelligence-macro" class="intelligence-macro"></div>
+                </section>
+                <section>
+                  <div class="section-heading"><div><h2>阶段变化</h2><span>对比上一次情报快照</span></div></div>
+                  <div id="intelligence-changes" class="intelligence-changes"></div>
+                </section>
+              </aside>
+            </section>
+            <p id="intelligence-note" class="hotspots-note"></p>
           </div>
         </section>
 
@@ -709,6 +785,7 @@
             </div>
           </section>
 
+          <section id="strategy-observation-card" class="strategy-observation-card"></section>
           <section id="backtest-metrics" class="metric-grid backtest-metrics"></section>
           <section class="chart-section">
             <div class="section-heading">
@@ -875,7 +952,7 @@
               </label>
               <label class="ai-privacy-toggle">
                 <input id="ai-send-holdings" type="checkbox">
-                <span>允许把当前标的的持仓股数和成本发送给 AI</span>
+                <span>允许把持仓标的、股数和成本发送给 AI（默认关闭）</span>
               </label>
             </div>
             <div class="ai-settings-actions">
@@ -969,6 +1046,7 @@
     <script src="preferences.js"></script>
     <script src="trade_plan.js"></script>
     <script src="ai_tracking.js"></script>
+    <script src="intelligence.js"></script>
     <script src="renderer.js"></script>
   </body>
 </html>

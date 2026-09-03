@@ -355,13 +355,59 @@ if (!window.hengce && isBrowserPreview) {
         listedAt: "2017-01-13"
       }
     }),
+    announcements: async (code) => ({
+      code,
+      asOf: new Date().toISOString(),
+      source: "浏览器演示公开公告",
+      announcements: [
+        { id: "demo-ann-1", code, title: "2026年半年度报告摘要", publishedAt: "2026-08-21", columns: ["半年度报告摘要"], kind: { key: "earnings", label: "业绩财报", importance: 76 }, url: "https://example.com" },
+        { id: "demo-ann-2", code, title: "关于半年度利润分配方案的公告", publishedAt: "2026-08-21", columns: ["利润分配"], kind: { key: "capital", label: "资本动作", importance: 70 }, url: "https://example.com" }
+      ]
+    }),
+    intelligence: async () => {
+      const ago = (minutes) => new Date(Date.now() - minutes * 60000).toISOString();
+      const events = [
+        ["demo-ai", "AI服务器订单与数据中心用电需求继续增长", "算力基础设施订单增长，但需要观察板块成交额能否持续。", "AI算力与通信", "ai-computing", "positive", 82, ago(8), ["算力", "服务器"]],
+        ["demo-policy", "央行公布最新金融数据", "社融与信贷数据进入验证窗口，银行与保险板块表现需要结合利率观察。", "金融与地产", "finance-property", "neutral", 76, ago(28), ["央行", "社融"]],
+        ["demo-oil", "国际油价波动加大，航运成本预期分化", "油价上涨与运输成本同时变化，资源和航运方向出现分歧。", "资源品与航运", "resources", "mixed", 68, ago(55), ["原油", "航运"]],
+        ["demo-battery", "固态电池进入新一轮装车验证", "产业链从技术预期转向实际验证阶段。", "新能源与汽车", "new-energy", "positive", 64, ago(95), ["固态电池"]]
+      ].map(([id, title, summary, theme, themeKey, sentiment, importance, publishedAt, tags]) => ({
+        id, title, summary, theme, themeKey, sentiment, importance, importanceLabel: importance >= 70 ? "重要" : "关注",
+        publishedAt, tags, source: "浏览器演示快讯", origin: "公开信息", url: "https://example.com",
+        industryTerms: themeKey === "finance-property" ? ["保险", "银行"] : themeKey === "ai-computing" ? ["通信", "计算机", "软件"] : [],
+        representatives: themeKey === "finance-property" ? [{ code: "601318", name: "中国平安" }] : themeKey === "ai-computing" ? [{ code: "601138", name: "工业富联" }] : []
+      }));
+      const themes = [
+        ["ai-computing", "AI算力与通信", "warming", "升温", 78, 2],
+        ["finance-property", "金融与地产", "emerging", "萌芽", 62, 1],
+        ["resources", "资源品与航运", "diverging", "分化", 58, 1],
+        ["new-energy", "新能源与汽车", "emerging", "萌芽", 52, 1]
+      ].map(([key, label, phaseKey, phaseLabel, activityScore, newsCount]) => {
+        const sample = events.find((event) => event.themeKey === key);
+        return {
+          key, label, phase: { key: phaseKey, label: phaseLabel }, activityScore, delta: 0, newsCount,
+          latestAt: sample.publishedAt, leadEventId: sample.id, tags: sample.tags,
+          industryTerms: sample.industryTerms, representatives: sample.representatives,
+          sentimentCounts: { positive: events.filter((event) => event.themeKey === key && event.sentiment === "positive").length, negative: 0 },
+          marketConfirmation: { key: key === "ai-computing" ? "confirmed" : key === "resources" ? "mixed" : "unmatched", label: key === "ai-computing" ? "量价确认" : key === "resources" ? "量价分化" : "暂无对应板块", score: key === "ai-computing" ? 76 : null, boards: [] },
+          reason: phaseKey === "warming" ? "事件密度上升，需要结合板块量价继续确认" : phaseKey === "diverging" ? "正负因素同时存在，方向尚未形成一致" : "刚出现少量相关事件，先建立观察基线"
+        };
+      });
+      return {
+        asOf: new Date().toISOString(),
+        summary: { eventCount: events.length, importantCount: 2, themeCount: themes.length, warmingCount: 1, confirmedCount: 1 },
+        sourceStatus: { sources: [{ name: "浏览器演示快讯", available: true, count: events.length }], partial: false, note: "演示数据" },
+        themes,
+        events
+      };
+    },
     notify: async () => true,
     openExternal: async (url) => window.open(url, "_blank"),
     checkForUpdate: async () => ({
-      currentVersion: "0.5.0",
-      latestVersion: "0.5.0",
-      tagName: "v0.5.0",
-      releaseName: "衡策 v0.5.0",
+      currentVersion: "0.6.0",
+      latestVersion: "0.6.0",
+      tagName: "v0.6.0",
+      releaseName: "衡策 v0.6.0",
       releaseNotes: "新增应用内更新检查、下载进度和 SHA-256 完整性校验。",
       assetName: "HengCe-Apple-Silicon.dmg",
       assetSize: 136e6,
@@ -369,7 +415,7 @@ if (!window.hengce && isBrowserPreview) {
       downloadable: true,
       available: false
     }),
-    appVersion: async () => "0.5.0",
+    appVersion: async () => "0.6.0",
     downloadUpdate: async () => ({ downloaded: true, fileName: "HengCe-Apple-Silicon.dmg" }),
     installUpdate: async () => ({ opened: true, willQuit: false }),
     setWindowPreferences: async (preferences) => preferences,
@@ -384,6 +430,7 @@ if (!window.hengce && isBrowserPreview) {
     deleteAiKey: async () => ({ baseUrl: "https://api.openai.com/v1", model: "gpt-5.6-luna", sendHoldings: false, hasApiKey: false, secureStorage: true }),
     testAi: async () => ({ ok: true, model: "gpt-5.6-luna", endpoint: "api.openai.com" }),
     trackWithAi: async () => { throw new Error("浏览器预览使用本地量化追踪摘要"); },
+    interpretEvent: async () => { throw new Error("浏览器预览使用本地事件解读"); },
     onWindowPreferences: () => () => {},
     onUpdateProgress: () => () => {}
   };
@@ -406,6 +453,8 @@ if (!window.hengce) {
     recommendations: unavailable,
     overnight: unavailable,
     profile: unavailable,
+    announcements: unavailable,
+    intelligence: unavailable,
     notify: async () => false,
     openExternal: unavailable,
     checkForUpdate: unavailable,
@@ -418,6 +467,7 @@ if (!window.hengce) {
     deleteAiKey: unavailable,
     testAi: unavailable,
     trackWithAi: unavailable,
+    interpretEvent: unavailable,
     onWindowPreferences: () => () => {},
     onUpdateProgress: () => () => {}
   };
@@ -437,6 +487,14 @@ const {
 } = window.HengCePreferences;
 const { buildObservationPlan } = window.HengCeTradePlan;
 const { buildLocalTrackingReport, trackingTargets } = window.HengCeAiTracking;
+const {
+  answerIntelligenceQuestion,
+  buildMacroPulse,
+  lifecycleChanges,
+  localEventInterpretation,
+  marketBriefs,
+  portfolioImpacts
+} = window.HengCeIntelligence;
 
 const DEFAULT_SETTINGS = {
   initialCapital: 100000,
@@ -457,11 +515,14 @@ const storedLastCode = normalizeCode(readJSON("hengce.lastStock.v1", null));
 const storedOvernightStreaks = readJSON("hengce.overnight.streaks.v1", null);
 const storedWindowPreferences = readJSON("hengce.windowPreferences.v1", {});
 const storedAiSnapshots = readJSON("hengce.aiTracking.v1", []);
+const storedIntelligenceHistory = readJSON("hengce.intelligence.history.v1", []);
+const storedIntelligenceSeen = readJSON("hengce.intelligence.seen.v1", []);
+const storedIntelligenceBookmarks = readJSON("hengce.intelligence.bookmarks.v1", []);
 const OVERNIGHT_MARKET_SCOPES = ["main", "main-growth", "main-star", "all"];
 const storedOvernightMarketScope = OVERNIGHT_MARKET_SCOPES.includes(storedUi.overnightMarketScope)
   ? storedUi.overnightMarketScope
   : "main";
-const VIEW_NAMES = ["dashboard", "hotspots", "compass", "recommendations", "overnight", "watchlist", "ai", "backtest", "holdings", "settings"];
+const VIEW_NAMES = ["dashboard", "hotspots", "intelligence", "compass", "recommendations", "overnight", "watchlist", "ai", "backtest", "holdings", "settings"];
 const requestedView = new URLSearchParams(window.location.search).get("view");
 const requestedStock = normalizeCode(new URLSearchParams(window.location.search).get("stock"));
 const startupCodeCandidates = [...new Set([
@@ -490,9 +551,28 @@ const state = {
   companyProfile: null,
   companyProfileLoading: true,
   companyProfileError: "",
+  announcements: null,
+  announcementsLoading: true,
+  announcementsError: "",
   hotspots: null,
   hotspotsLoading: false,
   hotspotsError: "",
+  intelligence: null,
+  intelligenceLoading: false,
+  intelligenceError: "",
+  intelligenceFilters: {
+    phase: storedUi.intelligenceFilters?.phase || "all",
+    importance: storedUi.intelligenceFilters?.importance || "all",
+    sentiment: storedUi.intelligenceFilters?.sentiment || "all"
+  },
+  intelligenceTheme: storedUi.intelligenceTheme || "",
+  intelligenceQuestion: ["focus", "portfolio", "risk", "divergence"].includes(storedUi.intelligenceQuestion) ? storedUi.intelligenceQuestion : "focus",
+  intelligenceHistory: Array.isArray(storedIntelligenceHistory) ? storedIntelligenceHistory.slice(0, 48) : [],
+  intelligenceSeen: new Set(Array.isArray(storedIntelligenceSeen) ? storedIntelligenceSeen.slice(0, 300) : []),
+  intelligenceInterpretations: new Map(),
+  intelligenceInterpretationLoading: new Set(),
+  intelligenceBookmarks: Array.isArray(storedIntelligenceBookmarks) ? storedIntelligenceBookmarks.slice(0, 100) : [],
+  intelligenceUnseenImportant: 0,
   compass: null,
   compassLoading: false,
   compassError: "",
@@ -593,7 +673,10 @@ function saveUiState() {
     backtestYears: state.backtestYears,
     recommendationFilters: state.recommendationFilters,
     aiTargetCode: state.aiTargetCode,
-    overnightMarketScope: state.overnightMarketScope
+    overnightMarketScope: state.overnightMarketScope,
+    intelligenceFilters: state.intelligenceFilters,
+    intelligenceTheme: state.intelligenceTheme,
+    intelligenceQuestion: state.intelligenceQuestion
   });
 }
 
@@ -805,11 +888,15 @@ async function loadMarketData(code = $("#stock-code").value, { force = false } =
   state.companyProfile = null;
   state.companyProfileLoading = true;
   state.companyProfileError = "";
+  state.announcements = null;
+  state.announcementsLoading = true;
+  state.announcementsError = "";
   $("#stock-code").value = normalized;
   setLoading(true);
   showError("");
   renderValuation();
   renderCompanyProfile();
+  renderCompanyAnnouncements();
   try {
     const options = { force };
     const indicesRequest = window.hengce.indices(options).catch(() => []);
@@ -822,6 +909,9 @@ async function loadMarketData(code = $("#stock-code").value, { force = false } =
       .catch((error) => ({ error: friendlyMarketError(error) }));
     const profileRequest = window.hengce
       .profile(normalized, options)
+      .catch((error) => ({ error: friendlyMarketError(error) }));
+    const announcementRequest = window.hengce
+      .announcements(normalized, options)
       .catch((error) => ({ error: friendlyMarketError(error) }));
     const [quote, bars] = await Promise.all([
       window.hengce.quote(normalized, options),
@@ -866,6 +956,13 @@ async function loadMarketData(code = $("#stock-code").value, { force = false } =
         state.profiles.set(normalized, profile);
       }
       renderCompanyProfile();
+    });
+    announcementRequest.then((result) => {
+      if (request !== marketLoadRequest || state.code !== normalized) return;
+      state.announcementsLoading = false;
+      if (result?.error) state.announcementsError = result.error;
+      else state.announcements = result;
+      renderCompanyAnnouncements();
     });
     $("#update-time").textContent = `更新 ${new Date().toLocaleTimeString("zh-CN", {
       hour: "2-digit",
@@ -1208,6 +1305,405 @@ async function loadHotspots({ force = false } = {}) {
   } finally {
     state.hotspotsLoading = false;
     renderHotspots();
+  }
+}
+
+function intelligenceImpacts(snapshot = state.intelligence) {
+  if (!snapshot) return [];
+  const holdings = state.holdings.map((item) => ({
+    ...item,
+    industry: state.profiles.get(item.code)?.industry || item.industry || ""
+  }));
+  return portfolioImpacts(
+    snapshot.themes || [],
+    snapshot.events || [],
+    holdings,
+    state.watchlist
+  );
+}
+
+function intelligenceTime(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "--"
+    : date.toLocaleString("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+}
+
+function renderInterpretationList(title, items, tone = "") {
+  return `
+    <div class="intelligence-interpretation-list ${tone}">
+      <strong>${escapeHTML(title)}</strong>
+      ${(items || []).length
+        ? `<ul>${items.map((item) => `<li>${escapeHTML(item)}</li>`).join("")}</ul>`
+        : '<span class="muted">暂无可确认信息</span>'}
+    </div>
+  `;
+}
+
+function renderEventInterpretation(entry) {
+  if (!entry?.report) return "";
+  const report = entry.report;
+  return `
+    <div class="intelligence-interpretation">
+      <div class="intelligence-interpretation-heading">
+        <span>${entry.source === "ai" ? `AI深度解读 · ${escapeHTML(entry.model || "已配置模型")}` : "本地规则解读"}</span>
+        ${entry.loading ? '<small>正在生成 AI 深度解释…</small>' : entry.error ? `<small>${escapeHTML(entry.error)}</small>` : ""}
+      </div>
+      <h4>${escapeHTML(report.headline)}</h4>
+      <p>${escapeHTML(report.conclusion)}</p>
+      <blockquote>${escapeHTML(report.whyItMatters)}</blockquote>
+      <div class="intelligence-interpretation-grid">
+        ${renderInterpretationList("可能传导", report.transmissionPath)}
+        ${renderInterpretationList("市场确认", report.marketConfirmation)}
+        ${renderInterpretationList("板块映射", report.beneficiaries, "positive")}
+        ${renderInterpretationList("主要风险", report.risks, "negative")}
+        ${renderInterpretationList("后续验证", report.validationPoints)}
+      </div>
+      <small class="intelligence-limitations">${escapeHTML((report.dataLimitations || []).join("；"))}</small>
+    </div>
+  `;
+}
+
+function filteredIntelligence(snapshot) {
+  if (state.intelligenceFilters.importance === "bookmarked") {
+    return state.intelligenceBookmarks.filter((event) =>
+      (state.intelligenceFilters.sentiment === "all" || event.sentiment === state.intelligenceFilters.sentiment) &&
+      (!state.intelligenceTheme || event.themeKey === state.intelligenceTheme)
+    );
+  }
+  const phase = state.intelligenceFilters.phase;
+  const themeKeys = new Set((snapshot.themes || [])
+    .filter((theme) => phase === "all" || theme.phase?.key === phase)
+    .map((theme) => theme.key));
+  return (snapshot.events || []).filter((event) => {
+    if (state.intelligenceTheme && event.themeKey !== state.intelligenceTheme) return false;
+    if (phase !== "all" && !themeKeys.has(event.themeKey)) return false;
+    if (state.intelligenceFilters.importance === "important" && event.importance < 70) return false;
+    if (state.intelligenceFilters.importance === "focus" && event.importance < 50) return false;
+    if (state.intelligenceFilters.sentiment !== "all" && event.sentiment !== state.intelligenceFilters.sentiment) return false;
+    return true;
+  });
+}
+
+function renderIntelligence() {
+  const loading = $("#intelligence-loading");
+  const content = $("#intelligence-content");
+  const error = $("#intelligence-error");
+  const refreshButton = $("#refresh-intelligence");
+  loading.classList.toggle("hidden", !state.intelligenceLoading);
+  content.classList.toggle("hidden", state.intelligenceLoading && !state.intelligence);
+  error.textContent = state.intelligenceError;
+  error.classList.toggle("hidden", !state.intelligenceError);
+  refreshButton.disabled = state.intelligenceLoading;
+  refreshButton.classList.toggle("rotating", state.intelligenceLoading);
+  const snapshot = state.intelligence;
+  if (!snapshot) return;
+  const summary = snapshot.summary || {};
+  $("#intelligence-summary").innerHTML = [
+    hotspotStat("公开事件", `${summary.eventCount || 0} 条`, "跨来源去重后"),
+    hotspotStat("重要事件", `${summary.importantCount || 0} 条`, "规则重要度 ≥ 70"),
+    hotspotStat("关联主题", `${summary.themeCount || 0} 个`, "行业与宏观主题"),
+    hotspotStat("升温 / 高热", `${summary.warmingCount || 0} 个`, "事件阶段"),
+    hotspotStat("量价确认", `${summary.confirmedCount || 0} 个`, "对应板块同步走强")
+  ].join("");
+  $("#intelligence-badge").textContent = String(state.intelligenceUnseenImportant);
+  $("#intelligence-badge").classList.toggle("hidden", state.intelligenceUnseenImportant === 0);
+
+  $("#intelligence-phase").value = state.intelligenceFilters.phase;
+  $("#intelligence-importance").value = state.intelligenceFilters.importance;
+  $("#intelligence-sentiment").value = state.intelligenceFilters.sentiment;
+  const aiNote = $("#intelligence-ai-note");
+  aiNote.textContent = state.aiConfig?.hasApiKey
+    ? `事件解读可使用 ${state.aiConfig.model}；AI失败时自动保留本地规则结果。`
+    : "未配置 API Key：生命周期、持仓影响、简报和事件解读仍由本地规则完整生成。";
+  aiNote.classList.remove("hidden");
+
+  const themes = (snapshot.themes || []).filter((theme) =>
+    state.intelligenceFilters.phase === "all" || theme.phase?.key === state.intelligenceFilters.phase
+  );
+  $("#intelligence-themes").innerHTML = themes.length
+    ? themes.slice(0, 12).map((theme) => `
+        <button class="intelligence-theme-card ${state.intelligenceTheme === theme.key ? "active" : ""}" data-intelligence-theme="${escapeHTML(theme.key)}">
+          <span class="lifecycle-phase ${escapeHTML(theme.phase?.key || "emerging")}">${escapeHTML(theme.phase?.label || "萌芽")}</span>
+          <strong>${escapeHTML(theme.label)}</strong>
+          <div><b>${number(theme.activityScore, 0)}</b><span>活跃度</span><b>${number(theme.newsCount, 0)}</b><span>事件</span></div>
+          <p>${escapeHTML(theme.reason || "等待更多事件")}</p>
+          <em class="market-confirmation ${escapeHTML(theme.marketConfirmation?.key || "unavailable")}">市场：${escapeHTML(theme.marketConfirmation?.label || "量价待验证")}</em>
+          <small>${(theme.tags || []).map((tag) => `#${escapeHTML(tag)}`).join(" ") || "暂无主题标签"}</small>
+        </button>
+      `).join("")
+    : '<div class="empty-state intelligence-empty"><strong>当前阶段暂无主题</strong><span>可切换生命周期筛选</span></div>';
+
+  const events = filteredIntelligence(snapshot);
+  const bookmarkedIds = new Set(state.intelligenceBookmarks.map((event) => event.id));
+  $("#intelligence-filter-count").textContent = `${events.length} 条`;
+  $("#intelligence-events").innerHTML = events.length
+    ? events.map((event) => {
+        const entry = state.intelligenceInterpretations.get(event.id);
+        const sentimentLabel = event.sentiment === "positive" ? "偏积极" : event.sentiment === "negative" ? "偏谨慎" : event.sentiment === "mixed" ? "存在分歧" : "中性";
+        return `
+          <article class="intelligence-event ${event.importance >= 70 ? "important" : ""}">
+            <div class="intelligence-event-meta">
+              <span class="importance-badge level-${event.importanceLabel === "重要" ? "high" : event.importanceLabel === "关注" ? "medium" : "normal"}">${escapeHTML(event.importanceLabel)} ${number(event.importance, 0)}</span>
+              <time>${escapeHTML(intelligenceTime(event.publishedAt))}</time>
+              <span>${escapeHTML(event.source)}${event.origin ? ` · ${escapeHTML(event.origin)}` : ""}</span>
+              ${event.alsoReportedBy?.length ? `<span>另见 ${event.alsoReportedBy.map(escapeHTML).join("、")}</span>` : ""}
+            </div>
+            <h3>${escapeHTML(event.title)}</h3>
+            <p>${escapeHTML(event.summary || "公开快讯未提供摘要，请查看原文。")}</p>
+            <div class="intelligence-event-tags">
+              <span>${escapeHTML(event.theme)}</span>
+              <span>${escapeHTML(sentimentLabel)}</span>
+              ${(event.tags || []).map((tag) => `<span>#${escapeHTML(tag)}</span>`).join("")}
+            </div>
+            <div class="intelligence-event-actions">
+              <button class="secondary-button interpret-intelligence-event" data-event-id="${escapeHTML(event.id)}">${state.aiConfig?.hasApiKey ? "AI深度解读" : "本地规则解读"}</button>
+              <button class="text-button bookmark-intelligence-event ${bookmarkedIds.has(event.id) ? "active" : ""}" data-event-id="${escapeHTML(event.id)}">${bookmarkedIds.has(event.id) ? "已收藏" : "收藏"}</button>
+              <button class="text-button open-intelligence-source" data-url="${escapeHTML(event.url)}">查看原文</button>
+            </div>
+            ${renderEventInterpretation(entry)}
+          </article>
+        `;
+      }).join("")
+    : '<div class="empty-state intelligence-empty"><strong>当前筛选下没有事件</strong><span>尝试切换阶段、重要度或方向</span></div>';
+
+  const impacts = intelligenceImpacts(snapshot);
+  $("#intelligence-impacts").innerHTML = impacts.length
+    ? impacts.map((impact) => `
+        <button data-code="${escapeHTML(impact.code)}">
+          <span>${escapeHTML(impact.source)} · ${escapeHTML(impact.phase?.label || "观察")}</span>
+          <strong>${escapeHTML(impact.name)} <small>${escapeHTML(impact.direction)}</small></strong>
+          <p>${escapeHTML(impact.theme)}：${escapeHTML(impact.reason)}</p>
+        </button>
+      `).join("")
+    : '<div class="intelligence-side-empty">当前持仓和观察列表未匹配到明显主题事件</div>';
+
+  const briefs = marketBriefs(snapshot, new Date());
+  $("#intelligence-briefs").innerHTML = briefs.map((brief) => `
+    <div class="intelligence-brief">
+      <div><strong>${escapeHTML(brief.label)}</strong><span>${escapeHTML(brief.range)}</span></div>
+      <b>${escapeHTML(brief.status)}</b>
+      <p>${brief.eventCount ? `${brief.eventCount} 条事件 · ${brief.themes.map(escapeHTML).join("、") || "市场综合"}` : "当前时段没有显著新增事件"}</p>
+    </div>
+  `).join("");
+  const answer = answerIntelligenceQuestion(state.intelligenceQuestion, snapshot, impacts);
+  $$("[data-intelligence-question]").forEach((button) =>
+    button.classList.toggle("active", button.dataset.intelligenceQuestion === state.intelligenceQuestion)
+  );
+  $("#intelligence-answer").innerHTML = `
+    <strong>${escapeHTML(answer.title)}</strong>
+    <p>${escapeHTML(answer.summary)}</p>
+    ${(answer.items || []).length ? `<ul>${answer.items.map((item) => `<li>${escapeHTML(item)}</li>`).join("")}</ul>` : ""}
+  `;
+  const macro = buildMacroPulse(snapshot, state.compass);
+  $("#intelligence-macro").innerHTML = `
+    <div><span>风险环境</span><strong>${escapeHTML(macro.regime)}</strong><small>可信度 ${escapeHTML(macro.confidence)}</small></div>
+    <div><span>宏观事件</span><strong>${number(macro.eventCount, 0)} 条</strong><small>${macro.regimeScore == null ? "指数合成待读取" : `指数合成 ${percent(macro.regimeScore)}`}</small></div>
+    ${(macro.headlines || []).length ? `<ul>${macro.headlines.map((item) => `<li>${escapeHTML(item)}</li>`).join("")}</ul>` : '<p class="muted">当前没有高相关宏观事件</p>'}
+  `;
+  const changes = lifecycleChanges(snapshot.themes || [], state.intelligenceHistory[1]?.themes || []);
+  $("#intelligence-changes").innerHTML = changes.length
+    ? changes.map((item) => `<div class="${escapeHTML(item.type)}"><strong>${escapeHTML(item.label)}</strong><span>${escapeHTML(item.text)}</span></div>`).join("")
+    : '<div class="intelligence-side-empty">相较上次快照暂无显著阶段变化</div>';
+  const sources = (snapshot.sourceStatus?.sources || [])
+    .map((source) => `${source.name}${source.available ? ` ${source.count}条` : " 暂不可用"}`)
+    .join(" · ");
+  $("#intelligence-note").textContent =
+    `${snapshot.stale ? "当前显示最近成功快照 · " : ""}更新时间 ${intelligenceTime(snapshot.asOf)} · ${sources || "公开快讯源"}。${snapshot.sourceStatus?.note || "仅展示公开摘要和原文链接。"} 新闻热度不等同于股价方向。`;
+
+  $$(".intelligence-theme-card").forEach((button) =>
+    button.addEventListener("click", () => {
+      state.intelligenceTheme = state.intelligenceTheme === button.dataset.intelligenceTheme
+        ? ""
+        : button.dataset.intelligenceTheme;
+      saveUiState();
+      renderIntelligence();
+    })
+  );
+  $$(".interpret-intelligence-event").forEach((button) =>
+    button.addEventListener("click", () => interpretIntelligenceEvent(button.dataset.eventId))
+  );
+  $$(".open-intelligence-source").forEach((button) =>
+    button.addEventListener("click", () => window.hengce.openExternal(button.dataset.url))
+  );
+  $$(".bookmark-intelligence-event").forEach((button) =>
+    button.addEventListener("click", () => toggleIntelligenceBookmark(button.dataset.eventId))
+  );
+  $$("#intelligence-impacts button").forEach((button) =>
+    button.addEventListener("click", () => analyzeStock(button.dataset.code))
+  );
+  $$("[data-intelligence-question]").forEach((button) =>
+    button.addEventListener("click", () => {
+      state.intelligenceQuestion = button.dataset.intelligenceQuestion;
+      saveUiState();
+      renderIntelligence();
+    })
+  );
+  refreshIcons();
+}
+
+function toggleIntelligenceBookmark(eventId) {
+  const existing = state.intelligenceBookmarks.find((event) => event.id === eventId);
+  if (existing) {
+    state.intelligenceBookmarks = state.intelligenceBookmarks.filter((event) => event.id !== eventId);
+    showToast("事件收藏已取消");
+  } else {
+    const event = state.intelligence?.events?.find((item) => item.id === eventId);
+    if (!event) return;
+    state.intelligenceBookmarks.unshift({ ...event, bookmarkedAt: new Date().toISOString() });
+    state.intelligenceBookmarks = state.intelligenceBookmarks.slice(0, 100);
+    showToast("事件已保存在本机收藏");
+  }
+  writeJSON("hengce.intelligence.bookmarks.v1", state.intelligenceBookmarks);
+  renderIntelligence();
+}
+
+async function interpretIntelligenceEvent(eventId) {
+  const snapshot = state.intelligence;
+  const event = snapshot?.events?.find((item) => item.id === eventId) ||
+    state.intelligenceBookmarks.find((item) => item.id === eventId);
+  if (!event) return;
+  const theme = snapshot.themes?.find((item) => item.key === event.themeKey) || null;
+  const local = localEventInterpretation(event, theme || {});
+  state.intelligenceInterpretations.set(eventId, { source: "local", report: local });
+  renderIntelligence();
+  if (!state.aiConfig?.hasApiKey || state.intelligenceInterpretationLoading.has(eventId)) return;
+  state.intelligenceInterpretationLoading.add(eventId);
+  state.intelligenceInterpretations.set(eventId, { source: "local", report: local, loading: true });
+  renderIntelligence();
+  try {
+    const result = await window.hengce.interpretEvent({
+      event,
+      theme,
+      marketContext: state.compass?.regime || null,
+      portfolioImpact: intelligenceImpacts(snapshot).filter((item) => item.themeKey === event.themeKey)
+    });
+    state.intelligenceInterpretations.set(eventId, {
+      source: result.source,
+      model: result.model,
+      report: result.report
+    });
+  } catch (error) {
+    state.intelligenceInterpretations.set(eventId, {
+      source: "local",
+      report: local,
+      error: `AI未完成，已保留本地结果：${aiErrorMessage(error)}`
+    });
+  } finally {
+    state.intelligenceInterpretationLoading.delete(eventId);
+    renderIntelligence();
+  }
+}
+
+async function ensureIntelligenceProfiles() {
+  const pending = state.holdings.filter((item) => !state.profiles.has(item.code));
+  if (!pending.length) return;
+  const settled = await Promise.allSettled(pending.map((item) => window.hengce.profile(item.code)));
+  settled.forEach((result, index) => {
+    if (result.status === "fulfilled") state.profiles.set(pending[index].code, result.value);
+  });
+  if (state.intelligence) renderIntelligence();
+}
+
+async function ensureIntelligenceCompass() {
+  if (state.compass || state.compassLoading) return;
+  state.compassLoading = true;
+  try {
+    state.compass = await window.hengce.compass();
+  } catch {
+    state.compass = null;
+  } finally {
+    state.compassLoading = false;
+    if (state.intelligence) renderIntelligence();
+  }
+}
+
+function recordIntelligenceSnapshot(snapshot) {
+  state.intelligenceHistory.unshift({
+    asOf: snapshot.asOf,
+    themes: (snapshot.themes || []).map((theme) => ({
+      key: theme.key,
+      phase: theme.phase,
+      activityScore: theme.activityScore,
+      newsCount: theme.newsCount
+    }))
+  });
+  state.intelligenceHistory = state.intelligenceHistory.slice(0, 48);
+  writeJSON("hengce.intelligence.history.v1", state.intelligenceHistory);
+}
+
+function notifyIntelligenceImpact(snapshot, previous, background) {
+  const firstBaseline = state.intelligenceSeen.size === 0;
+  const previousIds = new Set((previous?.events || []).map((event) => event.id));
+  const impacts = intelligenceImpacts(snapshot);
+  if (!firstBaseline && background) {
+    const newImportant = (snapshot.events || []).filter((item) =>
+      item.importance >= 70 &&
+      !previousIds.has(item.id)
+    );
+    if (state.activeView !== "intelligence") {
+      state.intelligenceUnseenImportant += newImportant.length;
+    }
+    const event = newImportant.find((item) =>
+      impacts.some((impact) => impact.themeKey === item.themeKey));
+    if (event) {
+      const affected = impacts.filter((impact) => impact.themeKey === event.themeKey).map((impact) => impact.name).slice(0, 3);
+      window.hengce.notify("衡策持仓情报", `${event.title}${affected.length ? ` · 关联 ${affected.join("、")}` : ""}`);
+    }
+  }
+  (snapshot.events || []).forEach((event) => state.intelligenceSeen.add(event.id));
+  state.intelligenceSeen = new Set([...state.intelligenceSeen].slice(-300));
+  writeJSON("hengce.intelligence.seen.v1", [...state.intelligenceSeen]);
+}
+
+let intelligenceRefreshTimer = null;
+
+function scheduleIntelligenceRefresh(delay = 120000) {
+  clearTimeout(intelligenceRefreshTimer);
+  intelligenceRefreshTimer = setTimeout(() => {
+    const shouldTrack = state.intelligence || state.holdings.length || state.watchlist.length;
+    if (shouldTrack) loadIntelligence({ force: true, background: true });
+    else scheduleIntelligenceRefresh();
+  }, delay);
+}
+
+async function loadIntelligence({ force = false, background = false } = {}) {
+  if (state.intelligenceLoading) return;
+  if (state.intelligence && !force) {
+    renderIntelligence();
+    scheduleIntelligenceRefresh();
+    return;
+  }
+  state.intelligenceLoading = true;
+  state.intelligenceError = "";
+  renderIntelligence();
+  const previous = state.intelligence;
+  try {
+    const previousThemes = state.intelligenceHistory[0]?.themes || [];
+    state.intelligence = await window.hengce.intelligence({ force, previousThemes });
+    writeJSON("hengce.intelligence.snapshot.v1", state.intelligence);
+    recordIntelligenceSnapshot(state.intelligence);
+    notifyIntelligenceImpact(state.intelligence, previous, background);
+    ensureIntelligenceProfiles();
+    ensureIntelligenceCompass();
+  } catch (error) {
+    const stored = readJSON("hengce.intelligence.snapshot.v1", null);
+    if (!state.intelligence && stored?.events?.length) {
+      state.intelligence = { ...stored, stale: true };
+      state.intelligenceError = "实时快讯源暂时无响应，当前显示最近一次成功快照。";
+    } else {
+      state.intelligenceError = friendlyMarketError(error);
+    }
+    if (!background) showToast(state.intelligence?.stale ? "已切换到最近成功快照" : "市场情报暂时无法更新");
+  } finally {
+    state.intelligenceLoading = false;
+    renderIntelligence();
+    scheduleIntelligenceRefresh();
   }
 }
 
@@ -1884,6 +2380,35 @@ function renderObservationPlan() {
   $("#record-current-holding").disabled = !state.quote;
 }
 
+function renderCompanyAnnouncements() {
+  const container = $("#company-announcements");
+  if (!container) return;
+  if (state.announcementsLoading) {
+    container.innerHTML = '<span class="muted">正在读取最新公司公告…</span>';
+    return;
+  }
+  const rows = state.announcements?.announcements || [];
+  if (!rows.length) {
+    container.innerHTML = `<span class="muted">${escapeHTML(state.announcementsError || "近期暂无可用公司公告")}</span>`;
+    return;
+  }
+  container.innerHTML = `
+    <div class="company-announcements-heading"><strong>最新公司公告</strong><span>${escapeHTML(state.announcements.source || "公开公告")} · 仅保留标题与原文链接</span></div>
+    <div class="company-announcement-list">
+      ${rows.slice(0, 6).map((item) => `
+        <button data-url="${escapeHTML(item.url)}">
+          <span class="announcement-kind ${escapeHTML(item.kind?.key || "general")}">${escapeHTML(item.kind?.label || "公司公告")}</span>
+          <strong>${escapeHTML(item.title)}</strong>
+          <small>${escapeHTML(item.publishedAt || "--")}</small>
+        </button>
+      `).join("")}
+    </div>
+  `;
+  $$("#company-announcements [data-url]").forEach((button) =>
+    button.addEventListener("click", () => window.hengce.openExternal(button.dataset.url))
+  );
+}
+
 function renderCompanyProfile() {
   const profile = state.companyProfile;
   const organization = profile?.organization;
@@ -2540,11 +3065,47 @@ function filteredBacktestBars() {
 
 function renderBacktest() {
   if (!state.bars.length || !state.quote) return;
+  const selectedBars = filteredBacktestBars();
   const result = runBacktest(
-    filteredBacktestBars(),
+    selectedBars,
     state.strategy,
     state.settings
   );
+  const validationLength = Math.min(
+    Math.max(100, Math.floor(selectedBars.length * 0.3)),
+    Math.max(0, selectedBars.length - 90)
+  );
+  const trainingBars = validationLength > 0 ? selectedBars.slice(0, -validationLength) : [];
+  const validationBars = validationLength > 0 ? selectedBars.slice(-validationLength) : [];
+  const training = runBacktest(trainingBars, state.strategy, state.settings);
+  const validation = runBacktest(validationBars, state.strategy, state.settings);
+  const strategyInfo = {
+    movingAverage: ["均线趋势", "用快慢均线交叉确认趋势，适合方向较明确的阶段"],
+    breakout: ["通道突破", "等待价格突破前期高点，以收盘确认降低盘中假突破"],
+    rsiReversal: ["RSI反转", "观察超卖修复，震荡环境下仍需严格控制止损"]
+  }[state.strategy];
+  const validationStatus = validation.tradeCount < 2
+    ? "验证样本不足"
+    : validation.totalReturn > 0 && validation.maxDrawdown <= 0.2
+      ? "验证段保持为正"
+      : "验证段需要谨慎";
+  const lastSignal = result.openPosition
+    ? `持有中 · ${result.openPosition.entryDate} 建仓`
+    : result.trades.length
+      ? `空仓观察 · 最近于 ${result.trades.at(-1).exitDate} 退出`
+      : "当前样本没有产生完整交易";
+  $("#strategy-observation-card").innerHTML = `
+    <div class="strategy-card-intro">
+      <span>策略观察卡</span>
+      <strong>${escapeHTML(strategyInfo[0])}</strong>
+      <p>${escapeHTML(strategyInfo[1])}</p>
+    </div>
+    <div><span>前段样本</span><strong class="${directionClass(training.totalReturn)}">${percent(training.totalReturn, true)}</strong><small>${training.tradeCount} 次交易</small></div>
+    <div><span>后段验证</span><strong class="${directionClass(validation.totalReturn)}">${percent(validation.totalReturn, true)}</strong><small>${validationStatus} · ${validation.tradeCount} 次</small></div>
+    <div><span>验证回撤</span><strong class="down">${percent(-validation.maxDrawdown, true)}</strong><small>最近 ${validationBars.length} 个交易日</small></div>
+    <div><span>当前状态</span><strong>${escapeHTML(result.openPosition ? "持有中" : "空仓")}</strong><small>${escapeHTML(lastSignal)}</small></div>
+    <div class="strategy-cost-note"><span>成本口径</span><p>佣金、印花税、滑点、100股交易单位；前后段均未调参，后段仅作时间切分验证。</p></div>
+  `;
   $("#backtest-symbol").textContent = `${state.quote.name} ${state.quote.code}`;
   $("#backtest-metrics").innerHTML = [
     metricCell("策略收益", percent(result.totalReturn, true), "期末净值"),
@@ -2908,6 +3469,9 @@ function restoreUiControls() {
   $("#backtest-years").value = String(state.backtestYears);
   $("#minimize-to-tray").checked = state.windowPreferences.minimizeToTray;
   $("#overnight-market-scope").value = state.overnightMarketScope;
+  $("#intelligence-phase").value = state.intelligenceFilters.phase;
+  $("#intelligence-importance").value = state.intelligenceFilters.importance;
+  $("#intelligence-sentiment").value = state.intelligenceFilters.sentiment;
   $$('[data-hotspot-mode]').forEach((button) =>
     button.classList.toggle("active", button.dataset.hotspotMode === state.hotspotMode)
   );
@@ -3029,12 +3593,13 @@ function compactAiFacts(value) {
 }
 
 async function buildAiFacts(code, { force = false } = {}) {
-  const [quote, bars, valuation, profile, compass] = await Promise.all([
+  const [quote, bars, valuation, profile, compass, announcements] = await Promise.all([
     window.hengce.quote(code, { force }),
     window.hengce.klines(code, 300, { force }),
     window.hengce.valuation(code, { force }).catch(() => null),
     window.hengce.profile(code, { force }).catch(() => null),
-    window.hengce.compass({ force }).catch(() => null)
+    window.hengce.compass({ force }).catch(() => null),
+    window.hengce.announcements(code, { force }).catch(() => null)
   ]);
   const technical = analyze(bars);
   const observationPlan = buildObservationPlan({ quote, model: technical, valuation });
@@ -3045,6 +3610,9 @@ async function buildAiFacts(code, { force = false } = {}) {
     name: quote.name,
     industry: profile?.industry || valuation?.industry?.name || "未分类",
     company: profile?.organization ? compactAiFacts(profile.organization) : null,
+    announcements: announcements?.announcements
+      ? compactAiFacts(announcements.announcements.slice(0, 8))
+      : [],
     observedAt: new Date().toISOString(),
     quote: compactAiFacts({
       price: quote.price,
@@ -3089,7 +3657,7 @@ async function buildAiFacts(code, { force = false } = {}) {
           floatingReturn: quote.price / holding.cost - 1
         }
       : null,
-    sources: [quote.source, "公开日K行情", valuation ? "公开财报与估值字段" : null, compass ? "公开市场指数" : null].filter(Boolean)
+    sources: [quote.source, "公开日K行情", valuation ? "公开财报与估值字段" : null, compass ? "公开市场指数" : null, announcements ? "东方财富公开公告" : null].filter(Boolean)
   };
 }
 
@@ -3352,6 +3920,7 @@ async function installUpdate() {
 
 function switchView(view) {
   state.activeView = view;
+  if (view === "intelligence") state.intelligenceUnseenImportant = 0;
   saveUiState();
   $$(".nav-item").forEach((button) =>
     button.classList.toggle("active", button.dataset.view === view)
@@ -3361,6 +3930,7 @@ function switchView(view) {
   );
   if (view === "backtest") requestAnimationFrame(renderBacktest);
   if (view === "hotspots") loadHotspots();
+  if (view === "intelligence") loadIntelligence();
   if (view === "compass") loadCompass();
   if (view === "recommendations") loadRecommendations();
   if (view === "overnight") loadOvernight();
@@ -3381,6 +3951,21 @@ function bindEvents() {
   $("#refresh-button").addEventListener("click", () => loadMarketData(state.code, { force: true }));
   $("#refresh-hotspots").addEventListener("click", () =>
     loadHotspots({ force: true })
+  );
+  $("#refresh-intelligence").addEventListener("click", () =>
+    loadIntelligence({ force: true })
+  );
+  [
+    ["#intelligence-phase", "phase"],
+    ["#intelligence-importance", "importance"],
+    ["#intelligence-sentiment", "sentiment"]
+  ].forEach(([selector, key]) =>
+    $(selector).addEventListener("change", (event) => {
+      state.intelligenceFilters[key] = event.currentTarget.value;
+      state.intelligenceTheme = "";
+      saveUiState();
+      renderIntelligence();
+    })
   );
   $("#refresh-compass").addEventListener("click", () =>
     loadCompass({ force: true })
@@ -3686,5 +4271,6 @@ refreshIcons();
 updateOvernightClock();
 setInterval(updateOvernightClock, 1000);
 scheduleOvernightRefresh();
+scheduleIntelligenceRefresh(60000);
 loadInitialMarketData();
 checkForUpdates({ silent: true });
