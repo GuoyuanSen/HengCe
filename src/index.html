@@ -722,6 +722,16 @@
               </label>
             </fieldset>
           </form>
+          <section class="desktop-preferences windows-only">
+            <div>
+              <h2>Windows 桌面行为</h2>
+              <p>最小化到通知区域后，尾盘扫描和观察提醒会继续运行。</p>
+            </div>
+            <label class="setting-toggle">
+              <input id="minimize-to-tray" type="checkbox" checked>
+              <span>最小化到系统托盘</span>
+            </label>
+          </section>
           <section class="update-section">
             <div class="update-icon"><i data-lucide="download"></i></div>
             <div class="update-copy">
@@ -742,7 +752,7 @@
             <div class="update-actions">
               <button id="check-update" class="secondary-button" type="button">检查更新</button>
               <button id="download-update" class="primary-button hidden" type="button">下载新版</button>
-              <button id="install-update" class="primary-button hidden" type="button">打开安装包</button>
+              <button id="install-update" class="primary-button hidden" type="button">打开安装包并退出</button>
             </div>
           </section>
           <section class="disclaimer">

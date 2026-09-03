@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, net, Notification, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, Menu, nativeImage, net, Notification, shell, Tray } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -39,7 +39,8 @@ const {
 const {
   buildUpdateModel,
   parseChecksum,
-  publicUpdateModel
+  publicUpdateModel,
+  shouldQuitAfterOpeningUpdate
 } = require("./updater.js");
 const {
   GLOBAL_MARKETS,
@@ -58,6 +59,11 @@ const RELEASE_API_URL =
   "https://api.github.com/repos/GuoyuanSen/HengCe/releases/latest";
 let downloadedUpdate = null;
 let updateDownloadActive = false;
+let mainWindow = null;
+let tray = null;
+let minimizeToTrayEnabled = true;
+let trayHintShown = false;
+let isQuitting = false;
 const responseCache = new Map();
 
 async function cachedRequest(key, ttl, loader, force = false) {
@@ -921,10 +927,70 @@ async function installDownloadedUpdate() {
   }
   const error = await shell.openPath(downloadedUpdate.path);
   if (error) throw new Error(`无法打开新版安装包：${error}`);
-  if (process.platform === "win32") {
+  const willQuit = shouldQuitAfterOpeningUpdate(process.platform);
+  if (willQuit) {
+    isQuitting = true;
     setTimeout(() => app.quit(), 1500);
   }
-  return { opened: true, willQuit: process.platform === "win32" };
+  return { opened: true, willQuit, platform: process.platform };
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  mainWindow.setSkipTaskbar(false);
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function hideMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.hide();
+  mainWindow.setSkipTaskbar(true);
+}
+
+function updateTrayMenu() {
+  if (!tray) return;
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: "打开衡策", click: showMainWindow },
+    { label: "隐藏窗口", click: hideMainWindow },
+    { type: "separator" },
+    {
+      label: "最小化到系统托盘",
+      type: "checkbox",
+      checked: minimizeToTrayEnabled,
+      click: (item) => {
+        minimizeToTrayEnabled = item.checked;
+        mainWindow?.webContents.send("system:window-preferences", {
+          minimizeToTray: minimizeToTrayEnabled
+        });
+        updateTrayMenu();
+      }
+    },
+    { type: "separator" },
+    {
+      label: "退出衡策",
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      }
+    }
+  ]));
+}
+
+function createWindowsTray() {
+  if (process.platform !== "win32" || tray) return;
+  const icon = nativeImage.createFromPath(
+    path.join(__dirname, "..", "Resources", "AppIcon.png")
+  ).resize({ width: 18, height: 18 });
+  tray = new Tray(icon);
+  tray.setToolTip("衡策 HengCe");
+  tray.on("click", showMainWindow);
+  tray.on("double-click", showMainWindow);
+  updateTrayMenu();
 }
 
 function createWindow() {
@@ -949,7 +1015,25 @@ function createWindow() {
       sandbox: true
     }
   });
+  mainWindow = window;
   if (!isMac) window.setMenuBarVisibility(false);
+  if (process.platform === "win32") {
+    window.on("minimize", (event) => {
+      if (!minimizeToTrayEnabled || isQuitting) return;
+      event.preventDefault();
+      hideMainWindow();
+      if (!trayHintShown && tray?.displayBalloon) {
+        tray.displayBalloon({
+          title: "衡策仍在后台运行",
+          content: "尾盘扫描和观察提醒会继续工作；点击托盘图标可恢复窗口。"
+        });
+        trayHintShown = true;
+      }
+    });
+  }
+  window.on("closed", () => {
+    if (mainWindow === window) mainWindow = null;
+  });
 
   window.webContents.on("will-navigate", (event, url) => {
     if (!url.startsWith("file://")) event.preventDefault();
@@ -964,6 +1048,22 @@ function createWindow() {
         const image = await window.webContents.capturePage();
         fs.writeFileSync(process.env.HENGCE_CAPTURE_PATH, image.toPNG());
         console.log(`Captured: ${process.env.HENGCE_CAPTURE_PATH}`);
+        if (process.platform === "win32" && process.env.HENGCE_TRAY_SMOKE_PATH) {
+          window.minimize();
+          setTimeout(() => {
+            fs.writeFileSync(
+              process.env.HENGCE_TRAY_SMOKE_PATH,
+              JSON.stringify({
+                trayCreated: Boolean(tray),
+                windowVisible: window.isVisible(),
+                processAlive: !window.isDestroyed()
+              })
+            );
+            console.log(`Tray smoke: ${process.env.HENGCE_TRAY_SMOKE_PATH}`);
+            app.quit();
+          }, 750);
+          return;
+        }
         app.quit();
       }, 7000);
     });
@@ -973,13 +1073,26 @@ function createWindow() {
     return { action: "deny" };
   });
   const captureView = String(process.env.HENGCE_CAPTURE_VIEW || "").trim();
+  const capturePlatform = String(process.env.HENGCE_CAPTURE_PLATFORM || "").trim();
+  const captureQuery = {};
+  if (captureView) captureQuery.view = captureView;
+  if (capturePlatform) captureQuery.platform = capturePlatform;
   window.loadFile(path.join(__dirname, "..", "src", "index.html"), {
-    query: captureView ? { view: captureView } : undefined
+    query: Object.keys(captureQuery).length ? captureQuery : undefined
   });
 }
 
 app.setAppUserModelId(APP_ID);
-app.whenReady().then(() => {
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", showMainWindow);
+}
+app.on("before-quit", () => {
+  isQuitting = true;
+});
+if (hasSingleInstanceLock) app.whenReady().then(() => {
   ipcMain.handle("market:quote", (_, code, options = {}) =>
     cachedRequest(`quote:${code}`, 15000, () => fetchQuote(code), options.force)
   );
@@ -1029,8 +1142,14 @@ app.whenReady().then(() => {
     downloadLatestUpdate(event.sender)
   );
   ipcMain.handle("system:update-install", () => installDownloadedUpdate());
+  ipcMain.handle("system:window-preferences", (_, preferences = {}) => {
+    minimizeToTrayEnabled = preferences.minimizeToTray !== false;
+    updateTrayMenu();
+    return { minimizeToTray: minimizeToTrayEnabled };
+  });
 
   createWindow();
+  createWindowsTray();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

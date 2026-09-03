@@ -21,6 +21,13 @@ contextBridge.exposeInMainWorld("hengce", {
   appVersion: () => ipcRenderer.invoke("system:app-version"),
   downloadUpdate: () => ipcRenderer.invoke("system:update-download"),
   installUpdate: () => ipcRenderer.invoke("system:update-install"),
+  setWindowPreferences: (preferences) =>
+    ipcRenderer.invoke("system:window-preferences", preferences),
+  onWindowPreferences: (callback) => {
+    const listener = (_event, preferences) => callback(preferences);
+    ipcRenderer.on("system:window-preferences", listener);
+    return () => ipcRenderer.removeListener("system:window-preferences", listener);
+  },
   onUpdateProgress: (callback) => {
     const listener = (_event, progress) => callback(progress);
     ipcRenderer.on("system:update-progress", listener);

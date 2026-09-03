@@ -29,6 +29,10 @@ function releaseAssetName(platform, arch) {
   return null;
 }
 
+function shouldQuitAfterOpeningUpdate(platform) {
+  return platform === "darwin" || platform === "win32";
+}
+
 function buildUpdateModel(release, currentVersion, platform, arch) {
   const assetName = releaseAssetName(platform, arch);
   const latestVersion = String(release?.tag_name || "").replace(/^v/i, "");
@@ -84,5 +88,6 @@ module.exports = {
   parseChecksum,
   publicUpdateModel,
   releaseAssetName,
+  shouldQuitAfterOpeningUpdate,
   versionParts
 };

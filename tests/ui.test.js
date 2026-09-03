@@ -168,6 +168,23 @@ test("Windows uses its native titlebar and compact sidebar spacing", () => {
   assert.match(styles, /html\[data-platform="win32"\] \.toolbar[\s\S]*?-webkit-app-region:\s*no-drag/);
 });
 
+test("Windows can minimize to tray while keeping background work alive", () => {
+  assert.match(main, /\bTray\b/);
+  assert.match(main, /function createWindowsTray/);
+  assert.match(main, /window\.on\("minimize"/);
+  assert.match(main, /event\.preventDefault\(\)/);
+  assert.match(main, /setSkipTaskbar\(true\)/);
+  assert.match(main, /尾盘扫描和观察提醒会继续工作/);
+  assert.match(main, /ipcMain\.handle\("system:window-preferences"/);
+  assert.match(main, /HENGCE_CAPTURE_PLATFORM/);
+  assert.match(main, /HENGCE_TRAY_SMOKE_PATH/);
+  assert.match(main, /requestSingleInstanceLock/);
+  assert.match(main, /app\.on\("second-instance", showMainWindow\)/);
+  assert.match(preload, /setWindowPreferences/);
+  assert.match(html, /id="minimize-to-tray"/);
+  assert.match(renderer, /hengce\.windowPreferences\.v1/);
+});
+
 test("settings expose verified in-app release updates", () => {
   assert.match(html, /id="check-update"/);
   assert.match(html, /id="download-update"/);
@@ -177,6 +194,8 @@ test("settings expose verified in-app release updates", () => {
   assert.match(main, /ipcMain\.handle\("system:update-check"/);
   assert.match(main, /ipcMain\.handle\("system:update-download"/);
   assert.match(main, /parseChecksum/);
+  assert.match(main, /shouldQuitAfterOpeningUpdate/);
+  assert.match(renderer, /打开 DMG 并退出/);
   assert.match(renderer, /checkForUpdates\(\{ silent: true \}\)/);
 });
 

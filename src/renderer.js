@@ -344,10 +344,10 @@ if (!window.hengce && isBrowserPreview) {
     notify: async () => true,
     openExternal: async (url) => window.open(url, "_blank"),
     checkForUpdate: async () => ({
-      currentVersion: "0.4.0",
-      latestVersion: "0.4.0",
-      tagName: "v0.4.0",
-      releaseName: "衡策 v0.4.0",
+      currentVersion: "0.4.1",
+      latestVersion: "0.4.1",
+      tagName: "v0.4.1",
+      releaseName: "衡策 v0.4.1",
       releaseNotes: "新增应用内更新检查、下载进度和 SHA-256 完整性校验。",
       assetName: "HengCe-Apple-Silicon.dmg",
       assetSize: 136e6,
@@ -355,9 +355,11 @@ if (!window.hengce && isBrowserPreview) {
       downloadable: true,
       available: false
     }),
-    appVersion: async () => "0.4.0",
+    appVersion: async () => "0.4.1",
     downloadUpdate: async () => ({ downloaded: true, fileName: "HengCe-Apple-Silicon.dmg" }),
     installUpdate: async () => ({ opened: true, willQuit: false }),
+    setWindowPreferences: async (preferences) => preferences,
+    onWindowPreferences: () => () => {},
     onUpdateProgress: () => () => {}
   };
 }
@@ -385,13 +387,15 @@ if (!window.hengce) {
     appVersion: unavailable,
     downloadUpdate: unavailable,
     installUpdate: unavailable,
+    setWindowPreferences: unavailable,
+    onWindowPreferences: () => () => {},
     onUpdateProgress: () => () => {}
   };
 }
 
 document.documentElement.dataset.platform =
-  window.hengce.platform ||
   new URLSearchParams(window.location.search).get("platform") ||
+  window.hengce.platform ||
   "browser";
 
 const { analyze, runBacktest } = window.HengCeEngine;
@@ -420,6 +424,7 @@ const storedUi = readJSON("hengce.ui.v1", {});
 const storedDefaultCode = normalizeCode(readJSON("hengce.defaultStock.v1", null));
 const storedLastCode = normalizeCode(readJSON("hengce.lastStock.v1", null));
 const storedOvernightStreaks = readJSON("hengce.overnight.streaks.v1", null);
+const storedWindowPreferences = readJSON("hengce.windowPreferences.v1", {});
 const VIEW_NAMES = ["dashboard", "hotspots", "compass", "recommendations", "overnight", "watchlist", "backtest", "holdings", "settings"];
 const requestedView = new URLSearchParams(window.location.search).get("view");
 const startupCodeCandidates = initialCodeCandidates({
@@ -495,6 +500,9 @@ const state = {
   updateDownloaded: false,
   updateProgress: null,
   updateMessage: "启动后会自动检查 GitHub Release 的正式版本",
+  windowPreferences: {
+    minimizeToTray: storedWindowPreferences.minimizeToTray !== false
+  },
   loading: false
 };
 
@@ -2742,6 +2750,7 @@ function restoreUiControls() {
   $("#recommendation-risk").value = state.recommendationFilters.risk;
   $("#recommendation-min-score").value = String(state.recommendationFilters.minScore);
   $("#backtest-years").value = String(state.backtestYears);
+  $("#minimize-to-tray").checked = state.windowPreferences.minimizeToTray;
   $$('[data-hotspot-mode]').forEach((button) =>
     button.classList.toggle("active", button.dataset.hotspotMode === state.hotspotMode)
   );
@@ -2804,6 +2813,9 @@ function renderUpdate() {
     ? "下载中…"
     : `下载新版${info?.assetSize ? ` · ${fileSize(info.assetSize)}` : ""}`;
   $("#install-update").classList.toggle("hidden", !state.updateDownloaded);
+  $("#install-update").textContent = window.hengce.platform === "darwin"
+    ? "打开 DMG 并退出"
+    : "打开安装包并退出";
   const progress = $("#update-progress");
   progress.classList.toggle("hidden", !state.updateDownloading);
   const percent = state.updateProgress?.percent;
@@ -2862,7 +2874,9 @@ async function installUpdate() {
   try {
     const result = await window.hengce.installUpdate();
     state.updateMessage = result.willQuit
-      ? "安装程序已启动，应用即将退出。"
+      ? result.platform === "darwin"
+        ? "新版 DMG 已打开，衡策即将退出；请将新版拖入应用程序并确认替换。"
+        : "安装程序已启动，衡策即将退出。"
       : "新版安装映像已打开，请按系统提示完成替换。";
     renderUpdate();
   } catch (error) {
@@ -3000,6 +3014,22 @@ function bindEvents() {
   $("#check-update").addEventListener("click", () => checkForUpdates());
   $("#download-update").addEventListener("click", downloadUpdate);
   $("#install-update").addEventListener("click", installUpdate);
+  $("#minimize-to-tray").addEventListener("change", (event) => {
+    state.windowPreferences.minimizeToTray = event.currentTarget.checked;
+    writeJSON("hengce.windowPreferences.v1", state.windowPreferences);
+    window.hengce.setWindowPreferences(state.windowPreferences).catch(() => {});
+    showToast(state.windowPreferences.minimizeToTray
+      ? "Windows 最小化时将进入系统托盘"
+      : "Windows 最小化时将保留在任务栏");
+  });
+  window.hengce.onWindowPreferences((preferences) => {
+    state.windowPreferences = {
+      ...state.windowPreferences,
+      ...preferences
+    };
+    writeJSON("hengce.windowPreferences.v1", state.windowPreferences);
+    $("#minimize-to-tray").checked = state.windowPreferences.minimizeToTray;
+  });
   window.hengce.onUpdateProgress((progress) => {
     state.updateProgress = progress;
     renderUpdate();
@@ -3147,6 +3177,7 @@ function bindEvents() {
 populateSettings();
 restoreUiControls();
 bindEvents();
+window.hengce.setWindowPreferences(state.windowPreferences).catch(() => {});
 switchView(state.activeView);
 renderUpdate();
 window.hengce.appVersion().then((version) => {

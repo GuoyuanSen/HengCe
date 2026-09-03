@@ -22,9 +22,10 @@ const releaseWorkflow = fs.readFileSync(
   "utf8"
 );
 
-test("release version is synchronized for v0.4.0", () => {
-  assert.equal(packageJson.version, "0.4.0");
+test("release version is synchronized for v0.4.1", () => {
+  assert.equal(packageJson.version, "0.4.1");
   assert.match(packageJson.scripts["build:win"], /build_windows\.js/);
+  assert.match(fs.readFileSync(path.join(root, "scripts", "build.js"), "utf8"), /ELECTRON_ZIP_DIR/);
 });
 
 test("tag workflow builds both platforms and publishes release assets", () => {
@@ -59,6 +60,8 @@ test("Windows workflow runs tests, smoke test, and artifact verification", () =>
   assert.match(workflow, /runs-on:\s*windows-2022/);
   assert.match(workflow, /pnpm test/);
   assert.match(workflow, /HENGCE_CAPTURE_PATH/);
+  assert.match(workflow, /HENGCE_TRAY_SMOKE_PATH/);
+  assert.match(workflow, /Tray smoke test failed/);
   assert.match(workflow, /actions\/upload-artifact@v4/);
   assert.match(workflow, /retention-days:\s*7/);
 });

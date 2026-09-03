@@ -2401,6 +2401,44 @@ tbody tr:hover {
   border-bottom: 1px solid var(--line);
 }
 
+.windows-only {
+  display: none;
+}
+
+html[data-platform="win32"] .windows-only {
+  display: flex;
+}
+
+.desktop-preferences {
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-top: 20px;
+  padding: 15px 17px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+}
+
+.desktop-preferences p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.setting-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.setting-toggle input {
+  width: 16px;
+  height: 16px;
+}
+
 .update-section {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;

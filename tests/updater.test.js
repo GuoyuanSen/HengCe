@@ -4,7 +4,8 @@ const {
   buildUpdateModel,
   compareVersions,
   parseChecksum,
-  releaseAssetName
+  releaseAssetName,
+  shouldQuitAfterOpeningUpdate
 } = require("../electron/updater.js");
 
 test("compares semantic release versions without string ordering errors", () => {
@@ -12,6 +13,12 @@ test("compares semantic release versions without string ordering errors", () => 
   assert.equal(compareVersions("0.3.2", "0.3.2"), 0);
   assert.equal(compareVersions("0.3.1", "0.3.2"), -1);
   assert.equal(compareVersions("not-a-version", "0.3.2"), null);
+});
+
+test("macOS and Windows quit after opening a verified installer", () => {
+  assert.equal(shouldQuitAfterOpeningUpdate("darwin"), true);
+  assert.equal(shouldQuitAfterOpeningUpdate("win32"), true);
+  assert.equal(shouldQuitAfterOpeningUpdate("linux"), false);
 });
 
 test("selects the signed release installer for each supported platform", () => {

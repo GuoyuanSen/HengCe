@@ -98,6 +98,7 @@ async function main() {
     platform: "darwin",
     arch: "arm64",
     electronVersion,
+    electronZipDir: process.env.ELECTRON_ZIP_DIR || undefined,
     download: {
       cacheRoot:
         process.env.ELECTRON_CACHE || path.join(buildRoot, "electron-cache")
@@ -107,7 +108,7 @@ async function main() {
     icon: iconFile,
     appBundleId: "com.guoyuansen.hengce",
     appVersion,
-    buildVersion: "9",
+    buildVersion: "10",
     appCategoryType: "public.app-category.finance",
     asar: true,
     prune: false

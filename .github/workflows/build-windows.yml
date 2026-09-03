@@ -36,7 +36,9 @@ jobs:
         shell: pwsh
         run: |
           $capture = Join-Path $PWD "dist\HengCe-Windows-x64-Smoke.png"
+          $traySmoke = Join-Path $PWD "dist\HengCe-Windows-x64-Tray-Smoke.json"
           $env:HENGCE_CAPTURE_PATH = $capture
+          $env:HENGCE_TRAY_SMOKE_PATH = $traySmoke
           $executable = "build\windows\package\HengCe-win32-x64\HengCe.exe"
           $process = Start-Process -FilePath $executable -PassThru
           if (-not $process.WaitForExit(45000)) {
@@ -48,6 +50,13 @@ jobs:
           }
           if (-not (Test-Path $capture)) {
             throw "Packaged application did not create a smoke-test screenshot"
+          }
+          if (-not (Test-Path $traySmoke)) {
+            throw "Packaged application did not create tray smoke evidence"
+          }
+          $trayResult = Get-Content $traySmoke | ConvertFrom-Json
+          if (-not $trayResult.trayCreated -or $trayResult.windowVisible -or -not $trayResult.processAlive) {
+            throw "Tray smoke test failed"
           }
 
       - name: Verify release files
@@ -83,5 +92,6 @@ jobs:
             dist/HengCe-Windows-x64-Portable.zip
             dist/HengCe-Windows-x64-Portable.zip.sha256
             dist/HengCe-Windows-x64-Smoke.png
+            dist/HengCe-Windows-x64-Tray-Smoke.json
           if-no-files-found: error
           retention-days: 7
