@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("hengce", {
   compass: (options = {}) => ipcRenderer.invoke("market:compass", options),
   valuation: (code, options = {}) => ipcRenderer.invoke("market:valuation", code, options),
   hotspots: (options = {}) => ipcRenderer.invoke("market:hotspots", options),
+  breadth: (options = {}) => ipcRenderer.invoke("market:breadth", options),
   boardMembers: (boardCode, options = {}) => ipcRenderer.invoke("market:board-members", boardCode, options),
   intraday: (code, options = {}) => ipcRenderer.invoke("market:intraday", code, options),
   recommendations: (options = {}) => ipcRenderer.invoke("market:recommendations", options),

@@ -115,6 +115,17 @@ if (!window.hengce && isBrowserPreview) {
       sourceStatus: { globalSource: "浏览器演示数据", domesticSource: "浏览器演示数据", styleSource: "浏览器演示数据", loaded: 14, expected: 14, partial: false },
       note: "风向标描述市场环境，不预测单只股票，也不构成交易建议。"
     }),
+    breadth: async () => ({
+      asOf: new Date().toISOString(),
+      score: 68,
+      regime: { key: "offensive", label: "进攻", tone: "positive", positionCeiling: 70 },
+      confidence: "较高",
+      breadth: { upCount: 3386, downCount: 1834, flatCount: 82, measuredStocks: 5302, advancingRate: 0.649, industryAdvancingRate: 0.61, medianBoardChange: 0.72, industryCount: 86 },
+      limitPools: { date: new Date().toISOString().slice(0, 10), limitUpCount: 39, limitDownCount: 9, brokenBoardCount: 48, brokenRate: 0.552, partial: false },
+      signals: ["上涨 3386 / 下跌 1834，上涨占比 64.9%", "涨停 39 / 跌停 9 / 炸板 48，炸板率 55.2%", "强势板块 12 个，市场状态 结构轮动", "全球与A股指数环境：均衡观察"],
+      sourceStatus: { partial: false, sources: [{ name: "浏览器演示宽度", available: true, asOf: new Date().toISOString() }] },
+      dataLimitations: ["仓位档位是市场环境上限参考，不代表必须持有该仓位"]
+    }),
     macro: async () => ({
       asOf: new Date().toISOString(),
       indicators: [
@@ -404,11 +415,35 @@ if (!window.hengce && isBrowserPreview) {
         industryTerms: themeKey === "finance-property" ? ["保险", "银行"] : themeKey === "ai-computing" ? ["通信", "计算机", "软件"] : [],
         representatives: themeKey === "finance-property" ? [{ code: "601318", name: "中国平安" }] : themeKey === "ai-computing" ? [{ code: "601138", name: "工业富联" }] : []
       }));
+      events.push({
+        id: "demo-fed",
+        title: "Federal Reserve issues monetary policy statement",
+        summary: "The Federal Reserve published an official monetary policy update.",
+        theme: "宏观政策与海外",
+        themeKey: "macro-policy",
+        sentiment: "neutral",
+        importance: 86,
+        importanceLabel: "重要",
+        publishedAt: ago(18),
+        tags: ["Federal Reserve", "monetary policy"],
+        source: "美联储",
+        origin: "Federal Reserve Board",
+        url: "https://www.federalreserve.gov/newsevents/pressreleases.htm",
+        industryTerms: [],
+        representatives: [],
+        official: true,
+        sourceTier: "一手官方",
+        region: "global",
+        language: "en",
+        categoryZh: "美联储货币政策",
+        sourceCode: "fed"
+      });
       const themes = [
         ["ai-computing", "AI算力与通信", "warming", "升温", 78, 2],
         ["finance-property", "金融与地产", "emerging", "萌芽", 62, 1],
         ["resources", "资源品与航运", "diverging", "分化", 58, 1],
-        ["new-energy", "新能源与汽车", "emerging", "萌芽", 52, 1]
+        ["new-energy", "新能源与汽车", "emerging", "萌芽", 52, 1],
+        ["macro-policy", "宏观政策与海外", "emerging", "萌芽", 66, 1]
       ].map(([key, label, phaseKey, phaseLabel, activityScore, newsCount]) => {
         const sample = events.find((event) => event.themeKey === key);
         return {
@@ -422,8 +457,8 @@ if (!window.hengce && isBrowserPreview) {
       });
       return {
         asOf: new Date().toISOString(),
-        summary: { eventCount: events.length, importantCount: 2, themeCount: themes.length, warmingCount: 1, confirmedCount: 1 },
-        sourceStatus: { sources: [{ name: "浏览器演示快讯", available: true, count: events.length }], partial: false, note: "演示数据" },
+        summary: { eventCount: events.length, importantCount: 3, officialCount: 1, themeCount: themes.length, warmingCount: 1, confirmedCount: 1 },
+        sourceStatus: { sources: [{ name: "浏览器演示快讯", available: true, count: events.length - 1 }, { name: "美联储", available: true, count: 1, official: true, sourceCode: "fed" }], partial: false, officialCount: 1, note: "演示数据" },
         themes,
         events
       };
@@ -474,6 +509,7 @@ if (!window.hengce) {
     klines: unavailable,
     indices: unavailable,
     compass: unavailable,
+    breadth: unavailable,
     valuation: unavailable,
     hotspots: unavailable,
     boardMembers: unavailable,
@@ -544,6 +580,7 @@ const {
   selectAlertEvent
 } = window.HengCeAlerts;
 const { localContextAnswer } = window.HengCeResearchAssistant;
+const { buildDataHealth } = window.HengCeDataHealth;
 
 const DEFAULT_SETTINGS = {
   initialCapital: 100000,
@@ -621,7 +658,10 @@ const state = {
     phase: storedUi.intelligenceFilters?.phase || "all",
     importance: storedUi.intelligenceFilters?.importance || "all",
     sentiment: storedUi.intelligenceFilters?.sentiment || "all",
-    search: storedUi.intelligenceFilters?.search || ""
+    search: storedUi.intelligenceFilters?.search || "",
+    source: ["all", "official", "public"].includes(storedUi.intelligenceFilters?.source)
+      ? storedUi.intelligenceFilters.source
+      : "all"
   },
   intelligenceTheme: storedUi.intelligenceTheme || "",
   intelligenceQuestion: ["focus", "portfolio", "risk", "divergence"].includes(storedUi.intelligenceQuestion) ? storedUi.intelligenceQuestion : "focus",
@@ -634,6 +674,9 @@ const state = {
   compass: null,
   compassLoading: false,
   compassError: "",
+  breadth: null,
+  breadthLoading: false,
+  breadthError: "",
   macro: null,
   macroLoading: false,
   macroError: "",
@@ -713,6 +756,7 @@ const state = {
   assistantLoading: false,
   assistantHistory: Array.isArray(storedAssistantHistory) ? storedAssistantHistory.slice(0, 20) : [],
   dashboardSnapshotStale: false,
+  marketError: "",
   backtestHistoryCode: "",
   backtestHistoryLoading: false,
   loading: false
@@ -1095,6 +1139,7 @@ async function loadMarketData(code = $("#stock-code").value, { force = false } =
     state.dashboardSnapshotStale = false;
   }
   state.backtestHistoryCode = "";
+  state.marketError = "";
   state.intraday = [];
   state.intradayError = "";
   state.valuation = null;
@@ -1188,7 +1233,10 @@ async function loadMarketData(code = $("#stock-code").value, { force = false } =
     })}`;
     return true;
   } catch (error) {
-    if (request === marketLoadRequest) showError(friendlyMarketError(error));
+    if (request === marketLoadRequest) {
+      state.marketError = friendlyMarketError(error);
+      showError(state.marketError);
+    }
     return false;
   } finally {
     if (request === marketLoadRequest) {
@@ -1592,11 +1640,14 @@ function filteredIntelligence(snapshot) {
     .join(" ")
     .toLowerCase()
     .includes(query);
+  const matchesSource = (event) => state.intelligenceFilters.source === "all" ||
+    (state.intelligenceFilters.source === "official" ? event.official : !event.official);
   if (state.intelligenceFilters.importance === "bookmarked") {
     return state.intelligenceBookmarks.filter((event) =>
       (state.intelligenceFilters.sentiment === "all" || event.sentiment === state.intelligenceFilters.sentiment) &&
       (!state.intelligenceTheme || event.themeKey === state.intelligenceTheme) &&
-      matchesSearch(event)
+      matchesSearch(event) &&
+      matchesSource(event)
     );
   }
   const phase = state.intelligenceFilters.phase;
@@ -1609,7 +1660,7 @@ function filteredIntelligence(snapshot) {
     if (state.intelligenceFilters.importance === "important" && event.importance < 70) return false;
     if (state.intelligenceFilters.importance === "focus" && event.importance < 50) return false;
     if (state.intelligenceFilters.sentiment !== "all" && event.sentiment !== state.intelligenceFilters.sentiment) return false;
-    return matchesSearch(event);
+    return matchesSearch(event) && matchesSource(event);
   });
 }
 
@@ -1628,7 +1679,7 @@ function renderIntelligence() {
   if (!snapshot) return;
   const summary = snapshot.summary || {};
   $("#intelligence-summary").innerHTML = [
-    hotspotStat("公开事件", `${summary.eventCount || 0} 条`, "跨来源去重后"),
+    hotspotStat("公开事件", `${summary.eventCount || 0} 条`, `含全球官方 ${summary.officialCount || 0} 条`),
     hotspotStat("重要事件", `${summary.importantCount || 0} 条`, "规则重要度 ≥ 70"),
     hotspotStat("关联主题", `${summary.themeCount || 0} 个`, "行业与宏观主题"),
     hotspotStat("升温 / 高热", `${summary.warmingCount || 0} 个`, "事件阶段"),
@@ -1641,11 +1692,31 @@ function renderIntelligence() {
   $("#intelligence-importance").value = state.intelligenceFilters.importance;
   $("#intelligence-sentiment").value = state.intelligenceFilters.sentiment;
   $("#intelligence-search").value = state.intelligenceFilters.search;
+  $("#intelligence-source").value = state.intelligenceFilters.source;
   const aiNote = $("#intelligence-ai-note");
   aiNote.textContent = state.aiConfig?.hasApiKey
     ? `事件解读可使用 ${state.aiConfig.model}；AI失败时自动保留本地规则结果。`
     : "未配置 API Key：生命周期、持仓影响、简报和事件解读仍由本地规则完整生成。";
   aiNote.classList.remove("hidden");
+
+  const officialSources = (snapshot.sourceStatus?.sources || []).filter((source) => source.official);
+  $("#global-radar-sources").innerHTML = officialSources.length
+    ? officialSources.map((source) => `
+        <div class="${source.available ? "available" : "unavailable"}">
+          <span></span><strong>${escapeHTML(source.name)}</strong><small>${source.available ? `订阅可用 · ${source.count} 条` : "暂不可用"}</small>
+        </div>
+      `).join("")
+    : '<span class="muted">全球官方源暂未返回</span>';
+  const officialEvents = (snapshot.events || []).filter((event) => event.official).slice(0, 6);
+  $("#global-radar-events").innerHTML = officialEvents.length
+    ? officialEvents.map((event) => `
+        <button data-url="${escapeHTML(event.url)}">
+          <span>${escapeHTML(intelligenceTime(event.publishedAt))} · ${escapeHTML(event.source)} · ${escapeHTML(event.categoryZh || event.theme)}</span>
+          <strong>${escapeHTML(event.title)}</strong>
+          <small>${event.corroboratedBy?.length ? `同主题线索：${event.corroboratedBy.map(escapeHTML).join("、")}` : "等待第二来源交叉线索"}</small>
+        </button>
+      `).join("")
+    : '<div class="intelligence-side-empty">全球一手源当前没有72小时内的新事件</div>';
 
   const themes = (snapshot.themes || []).filter((theme) =>
     state.intelligenceFilters.phase === "all" || theme.phase?.key === state.intelligenceFilters.phase
@@ -1676,17 +1747,20 @@ function renderIntelligence() {
               <span class="importance-badge level-${event.importanceLabel === "重要" ? "high" : event.importanceLabel === "关注" ? "medium" : "normal"}">${escapeHTML(event.importanceLabel)} ${number(event.importance, 0)}</span>
               <time>${escapeHTML(intelligenceTime(event.publishedAt))}</time>
               <span>${escapeHTML(event.source)}${event.origin ? ` · ${escapeHTML(event.origin)}` : ""}</span>
+              ${event.sourceTier ? `<span class="source-tier">${escapeHTML(event.sourceTier)}</span>` : ""}
+              ${event.corroboratedBy?.length ? `<span>同主题线索 ${event.corroboratedBy.map(escapeHTML).join("、")}</span>` : ""}
               ${event.alsoReportedBy?.length ? `<span>另见 ${event.alsoReportedBy.map(escapeHTML).join("、")}</span>` : ""}
             </div>
             <h3>${escapeHTML(event.title)}</h3>
             <p>${escapeHTML(event.summary || "公开快讯未提供摘要，请查看原文。")}</p>
+            ${event.language === "en" ? `<p class="global-event-hint">中文线索：${escapeHTML(event.categoryZh || event.theme)} · ${escapeHTML(event.theme)}${event.tags?.length ? ` · ${event.tags.map(escapeHTML).join(" / ")}` : ""}；标题保留官方原文。</p>` : ""}
             <div class="intelligence-event-tags">
               <span>${escapeHTML(event.theme)}</span>
               <span>${escapeHTML(sentimentLabel)}</span>
               ${(event.tags || []).map((tag) => `<span>#${escapeHTML(tag)}</span>`).join("")}
             </div>
             <div class="intelligence-event-actions">
-              <button class="secondary-button interpret-intelligence-event" data-event-id="${escapeHTML(event.id)}">${state.aiConfig?.hasApiKey ? "AI深度解读" : "本地规则解读"}</button>
+              <button class="secondary-button interpret-intelligence-event" data-event-id="${escapeHTML(event.id)}">${state.aiConfig?.hasApiKey ? (event.language === "en" ? "AI中文解读" : "AI深度解读") : "本地影响线索"}</button>
               <button class="text-button bookmark-intelligence-event ${bookmarkedIds.has(event.id) ? "active" : ""}" data-event-id="${escapeHTML(event.id)}">${bookmarkedIds.has(event.id) ? "已收藏" : "收藏"}</button>
               <button class="text-button open-intelligence-source" data-url="${escapeHTML(event.url)}">查看原文</button>
             </div>
@@ -1753,6 +1827,9 @@ function renderIntelligence() {
     button.addEventListener("click", () => interpretIntelligenceEvent(button.dataset.eventId))
   );
   $$(".open-intelligence-source").forEach((button) =>
+    button.addEventListener("click", () => window.hengce.openExternal(button.dataset.url))
+  );
+  $$("#global-radar-events button").forEach((button) =>
     button.addEventListener("click", () => window.hengce.openExternal(button.dataset.url))
   );
   $$(".bookmark-intelligence-event").forEach((button) =>
@@ -2300,6 +2377,71 @@ async function loadCompass({ force = false } = {}) {
   } finally {
     state.compassLoading = false;
     renderCompass();
+  }
+}
+
+function renderBreadth() {
+  const loading = $("#breadth-loading");
+  const content = $("#breadth-content");
+  const error = $("#breadth-error");
+  const refresh = $("#refresh-breadth");
+  loading.classList.toggle("hidden", !state.breadthLoading);
+  content.classList.toggle("hidden", state.breadthLoading && !state.breadth);
+  error.textContent = state.breadthError;
+  error.classList.toggle("hidden", !state.breadthError);
+  refresh.disabled = state.breadthLoading;
+  const snapshot = state.breadth;
+  if (!snapshot) {
+    $("#breadth-regime").innerHTML = '<span class="muted">市场宽度尚未加载</span>';
+    $("#breadth-metrics").innerHTML = "";
+    $("#breadth-signals").innerHTML = "";
+    return;
+  }
+  const regime = snapshot.regime || {};
+  $("#breadth-regime").className = `breadth-regime ${escapeHTML(regime.tone || "neutral")}`;
+  $("#breadth-regime").innerHTML = `
+    <div><span>市场档位</span><strong>${escapeHTML(regime.label || "等待数据")}</strong><small>综合分 ${snapshot.score == null ? "--" : number(snapshot.score, 0)} · 可信度 ${escapeHTML(snapshot.confidence || "偏低")}</small></div>
+    <div><span>模型仓位上限参考</span><strong>${regime.positionCeiling == null ? "--" : `${number(regime.positionCeiling, 0)}%`}</strong><small>不是必须持有仓位，个股风险仍需单独约束</small></div>
+  `;
+  const breadth = snapshot.breadth || {};
+  const pools = snapshot.limitPools || {};
+  $("#breadth-metrics").innerHTML = [
+    ["上涨 / 下跌", `${number(breadth.upCount, 0)} / ${number(breadth.downCount, 0)}`, `${number(breadth.measuredStocks, 0)} 只纳入口径 · 平盘 ${number(breadth.flatCount, 0)}`],
+    ["上涨占比", breadth.advancingRate == null ? "--" : plainPercent(breadth.advancingRate, true), `行业中位涨跌 ${breadth.medianBoardChange == null ? "--" : percent(breadth.medianBoardChange)}`],
+    ["涨停 / 跌停", pools.limitUpCount == null ? "--" : `${number(pools.limitUpCount, 0)} / ${number(pools.limitDownCount, 0)}`, pools.date || "交易日待确认"],
+    ["炸板", pools.brokenBoardCount == null ? "--" : number(pools.brokenBoardCount, 0), pools.brokenRate == null ? "等待口径" : `炸板率 ${plainPercent(pools.brokenRate, true)}`]
+  ].map(([label, value, detail]) => `<div><span>${escapeHTML(label)}</span><strong>${escapeHTML(value)}</strong><small>${escapeHTML(detail)}</small></div>`).join("");
+  $("#breadth-signals").innerHTML = (snapshot.signals || [])
+    .map((signal) => `<div><span></span><p>${escapeHTML(signal)}</p></div>`)
+    .join("");
+  const sources = (snapshot.sourceStatus?.sources || [])
+    .map((source) => `${source.name}${source.available ? "正常" : "暂缺"}`)
+    .join(" · ");
+  $("#breadth-note").textContent = `${snapshot.stale ? "当前显示最近成功快照 · " : ""}${sources}${snapshot.sourceStatus?.partial ? " · 部分数据降级" : ""}。${(snapshot.dataLimitations || []).join("；")}`;
+}
+
+async function loadBreadth({ force = false } = {}) {
+  if (state.breadth && !force) {
+    renderBreadth();
+    return;
+  }
+  state.breadthLoading = true;
+  state.breadthError = "";
+  renderBreadth();
+  try {
+    state.breadth = await window.hengce.breadth({ force });
+    writeJSON("hengce.breadth.snapshot.v1", state.breadth);
+  } catch (error) {
+    const stored = readJSON("hengce.breadth.snapshot.v1", null);
+    if (!state.breadth && stored?.regime) {
+      state.breadth = { ...stored, stale: true };
+      state.breadthError = "市场宽度暂时无法更新，当前显示最近成功快照。";
+    } else {
+      state.breadthError = friendlyMarketError(error);
+    }
+  } finally {
+    state.breadthLoading = false;
+    renderBreadth();
   }
 }
 
@@ -3940,6 +4082,178 @@ function populateSettings() {
   });
 }
 
+function dataHealthSources() {
+  const marketNow = tradingDayStatus(new Date());
+  const marketMinutes = marketNow.hour * 60 + marketNow.minute;
+  const inLiveSession = marketNow.isTradingDay && (
+    (marketMinutes >= 570 && marketMinutes <= 690) ||
+    (marketMinutes >= 780 && marketMinutes <= 900)
+  );
+  const liveMarketStaleMinutes = inLiveSession ? 10 : 24 * 60;
+  const intelligenceSources = state.intelligence?.sourceStatus?.sources || [];
+  const officialSources = intelligenceSources.filter((source) => source.official);
+  const latestMacroPeriod = state.macro?.indicators?.map((item) => item.date).sort().at(-1) || "";
+  return [
+    {
+      key: "market",
+      label: "行情与日K",
+      loaded: Boolean(state.quote || state.marketError),
+      available: Boolean(state.quote && state.bars.length >= 60),
+      partial: state.dashboardSnapshotStale,
+      asOf: state.quote?.timestamp,
+      staleAfterMinutes: liveMarketStaleMinutes,
+      source: state.quote?.source || "腾讯优先 / 东方财富降级",
+      detail: state.marketError || `${state.bars.length || 0} 根日K`
+    },
+    {
+      key: "intraday",
+      label: "当日分时",
+      loaded: Boolean(state.intraday.length || state.intradayError),
+      available: state.intraday.length > 0,
+      partial: false,
+      asOf: state.intraday.at(-1)?.time,
+      staleAfterMinutes: liveMarketStaleMinutes,
+      source: state.intraday.at(-1)?.source || "腾讯优先 / 东方财富降级",
+      detail: state.intradayError || `${state.intraday.length} 个分钟点`
+    },
+    {
+      key: "company",
+      label: "公司与估值",
+      loaded: Boolean(state.companyProfile || state.valuation || state.companyProfileError || (!state.valuationLoading && !state.companyProfileLoading)),
+      available: Boolean(state.companyProfile || state.valuation?.applicable),
+      partial: Boolean(state.companyProfileError || !state.companyProfile || !state.valuation),
+      asOf: state.companyProfile?.asOf || state.valuation?.asOf,
+      staleAfterMinutes: 24 * 60,
+      source: state.companyProfile?.source || "东方财富公开财务/F10",
+      detail: state.companyProfileError || state.valuation?.reason || "公司画像、财务与行业"
+    },
+    {
+      key: "hotspots",
+      label: "热点与板块",
+      loaded: Boolean(state.hotspots || state.hotspotsError),
+      available: Boolean(state.hotspots),
+      partial: Boolean(state.hotspots?.sourceStatus?.partial),
+      asOf: state.hotspots?.asOf,
+      staleAfterMinutes: 30,
+      source: "东方财富行业/概念板块",
+      detail: state.hotspotsError || `${state.hotspots?.summary?.totalBoards || 0} 个板块`
+    },
+    {
+      key: "intelligence",
+      label: "市场情报",
+      loaded: Boolean(state.intelligence || state.intelligenceError),
+      available: Boolean(state.intelligence),
+      partial: Boolean(state.intelligence?.sourceStatus?.partial),
+      asOf: state.intelligence?.asOf,
+      staleAfterMinutes: 10,
+      source: intelligenceSources.filter((item) => !item.official).map((item) => item.name).join(" / ") || "公开快讯",
+      detail: state.intelligenceError || `${state.intelligence?.summary?.eventCount || 0} 条去重事件`
+    },
+    {
+      key: "official-radar",
+      label: "全球官方雷达",
+      loaded: Boolean(state.intelligence),
+      available: officialSources.some((source) => source.available),
+      partial: officialSources.some((source) => !source.available),
+      asOf: state.intelligence?.asOf,
+      staleAfterMinutes: 10,
+      source: officialSources.map((item) => item.name).join(" / ") || "美联储 / 欧洲央行 / 美国能源信息署",
+      detail: `${state.intelligence?.summary?.officialCount || 0} 条72小时内事件`
+    },
+    {
+      key: "compass",
+      label: "市场风向标",
+      loaded: Boolean(state.compass || state.compassError),
+      available: Boolean(state.compass),
+      partial: Boolean(state.compass?.sourceStatus?.partial),
+      asOf: state.compass?.asOf,
+      staleAfterMinutes: 30,
+      source: "腾讯指数优先 / 东方财富降级",
+      detail: state.compassError || state.compass?.regime?.label || "全球与A股指数"
+    },
+    {
+      key: "breadth",
+      label: "市场宽度",
+      loaded: Boolean(state.breadth || state.breadthError),
+      available: Boolean(state.breadth),
+      partial: Boolean(state.breadth?.sourceStatus?.partial),
+      asOf: state.breadth?.asOf,
+      staleAfterMinutes: 10,
+      source: "沪深涨跌家数 / 涨跌停池 / 行业扩散",
+      detail: state.breadthError || state.breadth?.regime?.label || "仓位档位待计算"
+    },
+    {
+      key: "macro",
+      label: "宏观数据",
+      loaded: Boolean(state.macro || state.macroError),
+      available: Boolean(state.macro),
+      partial: Boolean(state.macro?.sourceStatus?.partial),
+      asOf: state.macro?.asOf,
+      staleAfterMinutes: 24 * 60,
+      source: "公开聚合 / 原始机构标注",
+      detail: state.macroError || `最新数据期次 ${latestMacroPeriod || "--"}`
+    },
+    {
+      key: "recommendations",
+      label: "A股优选",
+      loaded: Boolean(state.recommendations || state.recommendationsError),
+      available: Boolean(state.recommendations),
+      partial: Boolean(state.recommendations?.sourceStatus?.partial),
+      asOf: state.recommendations?.asOf,
+      staleAfterMinutes: 30,
+      source: state.recommendations?.sourceStatus?.candidateSource || "成交额候选池",
+      detail: state.recommendationsError || `${state.recommendations?.summary?.qualifiedCount || 0} 只入选`
+    },
+    {
+      key: "overnight",
+      label: "尾盘观察",
+      loaded: Boolean(state.overnight || state.overnightError),
+      available: Boolean(state.overnight),
+      partial: Boolean(state.overnight?.sourceStatus?.partial),
+      asOf: state.overnight?.asOf,
+      staleAfterMinutes: 30,
+      source: state.overnight?.sourceStatus?.candidateSource || "尾盘实时行情",
+      detail: state.overnightError || `${state.overnight?.summary?.qualifiedCount || 0} 只信号`
+    },
+    {
+      key: "calendar",
+      label: "交易日历",
+      loaded: Boolean(state.tradingCalendar),
+      available: Boolean(state.tradingCalendar?.covered),
+      partial: state.tradingCalendar?.status === "fallback",
+      asOf: state.tradingCalendar?.calendar?.fetchedAt || state.tradingCalendar?.fetchedAt,
+      staleAfterMinutes: 14 * 24 * 60,
+      source: state.tradingCalendar?.calendar?.sourceName || "上交所官方休市安排",
+      detail: state.tradingCalendar?.covered ? `覆盖 ${state.tradingCalendar.currentYear} 年` : "当前年份未覆盖"
+    }
+  ];
+}
+
+function healthAge(item) {
+  if (item.ageMinutes == null) return "更新时间未知";
+  if (item.ageMinutes < 2) return "刚刚更新";
+  if (item.ageMinutes < 60) return `${Math.round(item.ageMinutes)} 分钟前`;
+  if (item.ageMinutes < 24 * 60) return `${Math.round(item.ageMinutes / 60)} 小时前`;
+  return `${Math.round(item.ageMinutes / 1440)} 天前`;
+}
+
+function renderDataHealth() {
+  const health = buildDataHealth(dataHealthSources());
+  $("#data-health-summary").innerHTML = [
+    ["综合状态", health.level, health.score == null ? "等待使用模块" : `${health.score} 分`],
+    ["正常", `${health.summary.healthy} 项`, "来源和时效正常"],
+    ["降级 / 偏旧", `${health.summary.degraded + health.summary.stale} 项`, "建议核对更新时间"],
+    ["不可用", `${health.summary.unavailable} 项`, `${health.summary.idle} 项尚未使用`]
+  ].map(([label, value, detail]) => `<div><span>${escapeHTML(label)}</span><strong>${escapeHTML(value)}</strong><small>${escapeHTML(detail)}</small></div>`).join("");
+  $("#data-health-list").innerHTML = health.items.map((item) => `
+    <article>
+      <span class="health-status ${escapeHTML(item.status)}">${escapeHTML(item.statusLabel)}</span>
+      <div><strong>${escapeHTML(item.label)}</strong><small>${escapeHTML(item.source || "来源待确认")}</small></div>
+      <div><span>${escapeHTML(item.detail || "--")}</span><small>${escapeHTML(item.status === "idle" ? "进入对应页面后检测" : healthAge(item))}</small></div>
+    </article>
+  `).join("");
+}
+
 function populateAlertSettings() {
   const preferences = state.alertPreferences;
   $("#alerts-enabled").checked = preferences.enabled;
@@ -3979,6 +4293,7 @@ function restoreUiControls() {
   $("#intelligence-importance").value = state.intelligenceFilters.importance;
   $("#intelligence-sentiment").value = state.intelligenceFilters.sentiment;
   $("#intelligence-search").value = state.intelligenceFilters.search;
+  $("#intelligence-source").value = state.intelligenceFilters.source;
   $$('[data-hotspot-mode]').forEach((button) =>
     button.classList.toggle("active", button.dataset.hotspotMode === state.hotspotMode)
   );
@@ -4311,7 +4626,17 @@ function assistantContext(facts, report) {
         signal: item.signal,
         originalSource: item.originalSource
       }))
-    } : null
+    } : null,
+    marketBreadth: state.breadth ? compactAiFacts({
+      asOf: state.breadth.asOf,
+      score: state.breadth.score,
+      regime: state.breadth.regime,
+      confidence: state.breadth.confidence,
+      breadth: state.breadth.breadth,
+      limitPools: state.breadth.limitPools,
+      signals: state.breadth.signals,
+      sourceStatus: state.breadth.sourceStatus
+    }) : null
   });
 }
 
@@ -4355,6 +4680,14 @@ async function askContextAssistant() {
   state.assistantLoading = true;
   renderAssistant();
   try {
+    const contextLoads = [];
+    if (/市场|仓位|进攻|防守|宽度|涨跌|涨停|跌停/.test(question) && !state.breadth) {
+      contextLoads.push(loadBreadth());
+    }
+    if (/热点|事件|消息|新闻|板块/.test(question) && !state.intelligence) {
+      contextLoads.push(loadIntelligence());
+    }
+    if (contextLoads.length) await Promise.all(contextLoads);
     const code = state.aiTargetCode || state.code;
     const facts = state.aiFacts?.code === code
       ? state.aiFacts
@@ -4550,6 +4883,7 @@ function switchView(view) {
   if (view === "intelligence") loadIntelligence();
   if (view === "compass") {
     loadCompass();
+    loadBreadth();
     loadMacro();
   }
   if (view === "recommendations") loadRecommendations();
@@ -4563,6 +4897,7 @@ function switchView(view) {
     if (!state.aiConfig && !state.aiConfigLoading) loadAiSettings();
   }
   if (view === "holdings") updateHoldingQuotes();
+  if (view === "settings") renderDataHealth();
   if (view === "dashboard") schedulePriceChart();
 }
 
@@ -4581,7 +4916,8 @@ function bindEvents() {
   [
     ["#intelligence-phase", "phase"],
     ["#intelligence-importance", "importance"],
-    ["#intelligence-sentiment", "sentiment"]
+    ["#intelligence-sentiment", "sentiment"],
+    ["#intelligence-source", "source"]
   ].forEach(([selector, key]) =>
     $(selector).addEventListener("change", (event) => {
       state.intelligenceFilters[key] = event.currentTarget.value;
@@ -4596,8 +4932,9 @@ function bindEvents() {
     renderIntelligence();
   });
   $("#refresh-compass").addEventListener("click", () =>
-    Promise.all([loadCompass({ force: true }), loadMacro({ force: true })])
+    Promise.all([loadCompass({ force: true }), loadBreadth({ force: true }), loadMacro({ force: true })])
   );
+  $("#refresh-breadth").addEventListener("click", () => loadBreadth({ force: true }));
   $("#refresh-macro").addEventListener("click", () => loadMacro({ force: true }));
   $("#open-social-financing").addEventListener("click", () =>
     window.hengce.openExternal("https://www.pbc.gov.cn/diaochatongjisi/116219/116319/index.html")
@@ -4747,6 +5084,10 @@ function bindEvents() {
   $("#refresh-trading-calendar").addEventListener("click", () =>
     loadTradingCalendar({ force: true })
   );
+  $("#refresh-data-health").addEventListener("click", () => {
+    renderDataHealth();
+    showToast("数据状态已更新");
+  });
   ["#alerts-enabled", "#alert-minimum-importance", "#alert-portfolio-only", "#alert-keywords", "#alert-quiet-start", "#alert-quiet-end"].forEach((selector) =>
     $(selector).addEventListener("change", saveAlertPreferences)
   );

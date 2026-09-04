@@ -167,4 +167,7 @@ test("builds composite and flow rankings with de-duplication and partial status"
   );
   assert.equal(snapshot.threeDayFlow[0].name, "机器人");
   assert.ok(snapshot.composite[0].score >= snapshot.composite[1].score);
+  assert.equal(snapshot.summary.breadth.upCount, 68);
+  assert.equal(snapshot.summary.breadth.downCount, 23);
+  assert.equal(snapshot.summary.breadth.industryCount, 2);
 });

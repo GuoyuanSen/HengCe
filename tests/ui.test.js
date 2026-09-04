@@ -10,6 +10,8 @@ const styles = fs.readFileSync(path.join(root, "src", "styles.css"), "utf8");
 const preload = fs.readFileSync(path.join(root, "electron", "preload.js"), "utf8");
 const main = fs.readFileSync(path.join(root, "electron", "main.js"), "utf8");
 const macro = fs.readFileSync(path.join(root, "electron", "macro.js"), "utf8");
+const intelligenceBackend = fs.readFileSync(path.join(root, "electron", "intelligence.js"), "utf8");
+const breadthBackend = fs.readFileSync(path.join(root, "electron", "breadth.js"), "utf8");
 
 test("stock code input stays outside the draggable titlebar", () => {
   assert.match(
@@ -88,6 +90,9 @@ test("market intelligence combines public events, lifecycle, holdings impact and
   assert.match(html, /id="intelligence-events"/);
   assert.match(html, /id="intelligence-impacts"/);
   assert.match(html, /id="intelligence-briefs"/);
+  assert.match(html, /id="global-radar-sources"/);
+  assert.match(html, /id="global-radar-events"/);
+  assert.match(html, /id="intelligence-source"/);
   assert.match(html, /value="bookmarked">我的收藏/);
   assert.match(preload, /intelligence:\s*\(options/);
   assert.match(preload, /interpretEvent:\s*\(payload\)/);
@@ -95,6 +100,11 @@ test("market intelligence combines public events, lifecycle, holdings impact and
   assert.match(main, /ipcMain\.handle\("ai:intelligence"/);
   assert.match(main, /api-one\.wallstcn\.com/);
   assert.match(main, /feed\.mix\.sina\.com\.cn/);
+  assert.match(intelligenceBackend, /federalreserve\.gov\/feeds\/press_all\.xml/);
+  assert.match(intelligenceBackend, /ecb\.europa\.eu\/rss\/press\.html/);
+  assert.match(intelligenceBackend, /eia\.gov\/rss\/todayinenergy\.xml/);
+  assert.match(renderer, /全球事件雷达|global-radar-events/);
+  assert.match(renderer, /AI中文解读/);
   assert.match(renderer, /localEventInterpretation\(event/);
   assert.match(renderer, /if \(!state\.aiConfig\?\.hasApiKey/);
   assert.match(renderer, /AI未完成，已保留本地结果/);
@@ -118,6 +128,20 @@ test("market compass is a standalone lazy-loaded global and domestic view", () =
   assert.match(renderer, /if \(view === "compass"\) \{[\s\S]*?loadCompass\(\);[\s\S]*?loadMacro\(\);/);
   assert.match(renderer, /window\.hengce\.compass\(\{ force \}\)/);
   assert.match(renderer, /风向标描述市场环境/);
+});
+
+test("market breadth exposes regime, position ceiling and execution breadth", () => {
+  assert.match(html, /id="breadth-regime"/);
+  assert.match(html, /id="breadth-metrics"/);
+  assert.match(html, /市场宽度与仓位档位/);
+  assert.match(preload, /breadth:\s*\(options/);
+  assert.match(main, /ipcMain\.handle\("market:breadth"/);
+  assert.match(main, /ulist\.np\/get/);
+  assert.match(breadthBackend, /getTopicZTPool/);
+  assert.match(breadthBackend, /getTopicDTPool/);
+  assert.match(breadthBackend, /getTopicZBPool/);
+  assert.match(renderer, /模型仓位上限参考/);
+  assert.match(renderer, /hengce\.breadth\.snapshot\.v1/);
 });
 
 test("macro data center exposes period, provenance and partial-data handling", () => {
@@ -248,6 +272,15 @@ test("intelligence reminders support search, keywords and quiet hours", () => {
   assert.match(renderer, /hengce\.alertPreferences\.v1/);
   assert.match(renderer, /selectAlertEvent/);
   assert.match(renderer, /衡策情报提醒/);
+});
+
+test("settings summarize provenance, staleness and degraded data health", () => {
+  assert.match(html, /id="data-health-summary"/);
+  assert.match(html, /id="data-health-list"/);
+  assert.match(html, /src="data_health\.js"/);
+  assert.match(renderer, /function dataHealthSources/);
+  assert.match(renderer, /function renderDataHealth/);
+  assert.match(html, /尚未使用.*不是接口故障/);
 });
 
 test("market views expose provenance and stale-data protection", () => {

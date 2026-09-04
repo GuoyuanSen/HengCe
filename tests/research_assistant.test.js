@@ -20,9 +20,11 @@ test("local context answer combines stock, portfolio and event facts", () => {
     },
     stockReport: { risks: ["波动偏高"], nextChecks: ["观察量能"] },
     portfolioRisk: { positionCount: 2, riskLevel: "中等", maxWeight: 0.45, maxDrawdown: 0.12 },
-    intelligence: { themes: [{ label: "AI算力", phase: { label: "升温" }, newsCount: 4, activityScore: 70 }] }
+    intelligence: { themes: [{ label: "AI算力", phase: { label: "升温" }, newsCount: 4, activityScore: 70 }] },
+    marketBreadth: { regime: { label: "均衡", positionCeiling: 50 }, breadth: { advancingRate: 0.45 }, limitPools: { limitUpCount: 39, limitDownCount: 9, brokenBoardCount: 48 } }
   });
-  assert.ok(answer.perspectives.length >= 3);
+  assert.ok(answer.perspectives.length >= 4);
+  assert.match(answer.perspectives.map((item) => item.role).join(" "), /市场宽度/);
   assert.match(answer.risks.join(" "), /买卖|仓位|流动性/);
   assert.equal(answer.sourceLabels[0], "腾讯行情");
   assert.equal(CONTEXT_ANSWER_SCHEMA.additionalProperties, false);

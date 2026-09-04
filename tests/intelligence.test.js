@@ -1,11 +1,13 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  GLOBAL_OFFICIAL_FEEDS,
   attachMarketConfirmation,
   buildIntelligenceSnapshot,
   classifyEvent,
   dedupeEvents,
   parseSinaRoll,
+  parseOfficialRss,
   parseWallstreetLives,
   titleSimilarity
 } = require("../electron/intelligence.js");
@@ -18,6 +20,36 @@ const {
   marketBriefs,
   portfolioImpacts
 } = require("../src/intelligence.js");
+
+test("parses official global RSS with exact source time and host allowlist", () => {
+  const source = GLOBAL_OFFICIAL_FEEDS.find((item) => item.key === "fed");
+  const xml = `<?xml version="1.0"?><rss><channel><item>
+    <title><![CDATA[FOMC issues monetary policy statement]]></title>
+    <link><![CDATA[https://www.federalreserve.gov/newsevents/pressreleases/monetary20260904a.htm]]></link>
+    <description>Federal Reserve updates its interest rate decision.</description>
+    <category>Monetary Policy</category>
+    <pubDate>Fri, 04 Sep 2026 18:00:00 GMT</pubDate>
+  </item><item><title>Blocked host</title><link>https://example.com/x</link><pubDate>Fri, 04 Sep 2026 18:00:00 GMT</pubDate></item></channel></rss>`;
+  const events = parseOfficialRss(xml, source);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].sourceTier, "一手官方");
+  assert.equal(events[0].publishedAt, "2026-09-04T18:00:00.000Z");
+  assert.equal(events[0].category, "Monetary Policy");
+  assert.equal(events[0].categoryZh, "美联储货币政策");
+  const snapshot = buildIntelligenceSnapshot([...events, {
+    id: "cn-1",
+    title: "美联储公布最新利率决定",
+    summary: "市场等待政策路径说明",
+    source: "公开快讯",
+    publishedAt: "2026-09-04T19:00:00.000Z",
+    url: "https://example.com/fed",
+    providerScore: 2
+  }], { asOf: "2026-09-04T19:10:00Z" });
+  const official = snapshot.events.find((item) => item.official);
+  assert.equal(official.themeKey, "macro-policy");
+  assert.deepEqual(official.corroboratedBy, ["公开快讯"]);
+  assert.equal(snapshot.summary.officialCount, 1);
+});
 
 test("parses public Wallstreet and Sina event feeds with source links", () => {
   const wallstreet = parseWallstreetLives({ data: { items: [{
@@ -96,6 +128,35 @@ test("builds explainable lifecycle themes and compares prior activity", () => {
   });
   assert.equal(confirmed.themes[0].marketConfirmation.key, "confirmed");
   assert.equal(confirmed.summary.confirmedCount, 1);
+});
+
+test("high-frequency public feeds cannot crowd official events out of the radar", () => {
+  const asOf = "2026-09-04T18:00:00Z";
+  const publicEvents = Array.from({ length: 90 }, (_, index) => ({
+    id: `public-${index}`,
+    title: `${Array.from({ length: 12 }, (_, offset) => String.fromCharCode(0x4e00 + index * 13 + offset)).join("")} 机器人订单变化`,
+    summary: "机器人产业公开信息",
+    source: "聚合快讯",
+    publishedAt: new Date(Date.parse(asOf) - index * 60000).toISOString(),
+    url: `https://example.com/${index}`,
+    providerScore: 1
+  }));
+  const official = {
+    id: "official-old",
+    title: "Federal Reserve publishes monetary policy minutes",
+    summary: "Official monetary policy material",
+    source: "美联储",
+    origin: "Federal Reserve Board",
+    publishedAt: "2026-09-03T18:00:00Z",
+    url: "https://www.federalreserve.gov/example",
+    providerScore: 1.5,
+    official: true,
+    sourceTier: "一手官方"
+  };
+  const snapshot = buildIntelligenceSnapshot([...publicEvents, official], { asOf });
+  assert.equal(snapshot.events.some((item) => item.id === "official-old"), true);
+  assert.equal(snapshot.summary.officialCount, 1);
+  assert.ok(snapshot.events.length <= 90);
 });
 
 test("maps themes to holdings and produces local briefs and event interpretation", () => {

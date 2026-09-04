@@ -67,6 +67,7 @@
     const report = context.stockReport || {};
     const portfolio = context.portfolioRisk || {};
     const intelligence = context.intelligence || {};
+    const marketBreadth = context.marketBreadth || {};
     const query = text(question, 500);
     const perspectives = [];
     if (facts.code) {
@@ -102,6 +103,20 @@
         role: "事件与市场",
         conclusion: `当前活跃主题为${theme.label || "市场综合"}，阶段${theme.phase?.label || "观察"}。`,
         evidence: [`事件 ${theme.newsCount || 0} 条`, `活跃度 ${theme.activityScore || 0}`]
+      });
+    }
+    if (marketBreadth.regime) {
+      perspectives.push({
+        role: "市场宽度",
+        conclusion: `当前市场档位${marketBreadth.regime.label || "等待数据"}，模型仓位上限参考 ${marketBreadth.regime.positionCeiling ?? "--"}%。`,
+        evidence: [
+          marketBreadth.breadth?.advancingRate != null
+            ? `上涨占比 ${(marketBreadth.breadth.advancingRate * 100).toFixed(1)}%`
+            : "涨跌家数暂缺",
+          marketBreadth.limitPools?.limitUpCount != null
+            ? `涨停 ${marketBreadth.limitPools.limitUpCount} / 跌停 ${marketBreadth.limitPools.limitDownCount || 0} / 炸板 ${marketBreadth.limitPools.brokenBoardCount || 0}`
+            : "涨跌停数据暂缺"
+        ]
       });
     }
     const asksTrade = /买|卖|加仓|减仓|止损|仓位/.test(query);

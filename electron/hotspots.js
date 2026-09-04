@@ -174,6 +174,19 @@ function buildHotspotSnapshot(
   const positive3DayCount = boards.filter(
     (item) => item.netFlow3Day > 0
   ).length;
+  const industryBoards = boards.filter((item) =>
+    item.type === "行业" && item.upCount != null && item.downCount != null
+  );
+  const stockUpCount = industryBoards.reduce((sum, item) => sum + item.upCount, 0);
+  const stockDownCount = industryBoards.reduce((sum, item) => sum + item.downCount, 0);
+  const measuredStocks = stockUpCount + stockDownCount;
+  const industryChanges = industryBoards
+    .map((item) => item.changePercent)
+    .filter(Number.isFinite)
+    .sort((left, right) => left - right);
+  const medianBoardChange = industryChanges.length
+    ? industryChanges[Math.floor(industryChanges.length / 2)]
+    : null;
   const marketTone =
     strongCount >= 15 && advancingRate >= 0.6
       ? "热点扩散"
@@ -193,7 +206,16 @@ function buildHotspotSnapshot(
       strongCount,
       positive3DayCount,
       leadingTheme: composite[0]?.name || "--",
-      marketTone
+      marketTone,
+      breadth: {
+        upCount: stockUpCount,
+        downCount: stockDownCount,
+        measuredStocks,
+        advancingRate: measuredStocks ? stockUpCount / measuredStocks : null,
+        industryAdvancingRate: advancingRate,
+        medianBoardChange,
+        industryCount: industryBoards.length
+      }
     },
     composite,
     todayFlow,

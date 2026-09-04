@@ -338,12 +338,22 @@
             <section id="intelligence-summary" class="hotspots-summary"></section>
             <section class="intelligence-filters" aria-label="市场情报筛选">
               <label class="intelligence-search-filter"><span>搜索</span><input id="intelligence-search" type="search" placeholder="标题、主题或关键词"></label>
+              <label><span>来源</span><select id="intelligence-source"><option value="all">全部来源</option><option value="official">全球一手官方</option><option value="public">聚合公开快讯</option></select></label>
               <label><span>生命周期</span><select id="intelligence-phase"><option value="all">全部阶段</option><option value="emerging">萌芽</option><option value="warming">升温</option><option value="hot">高热</option><option value="diverging">分化</option><option value="declining">衰退</option></select></label>
               <label><span>重要度</span><select id="intelligence-importance"><option value="all">全部事件</option><option value="important">仅重要</option><option value="focus">关注及以上</option><option value="bookmarked">我的收藏</option></select></label>
               <label><span>方向</span><select id="intelligence-sentiment"><option value="all">全部方向</option><option value="positive">偏积极</option><option value="negative">偏谨慎</option><option value="mixed">存在分歧</option><option value="neutral">中性</option></select></label>
               <div><span>当前结果</span><strong id="intelligence-filter-count">0 条</strong></div>
             </section>
             <div id="intelligence-ai-note" class="ai-config-banner hidden"></div>
+            <section class="global-radar-section">
+              <div class="section-heading">
+                <div><h2>全球事件雷达</h2><span>直接读取海外机构官方 RSS，保留原始标题、发布时间和链接</span></div>
+                <span class="data-confidence">一手官方</span>
+              </div>
+              <div id="global-radar-sources" class="global-radar-sources"></div>
+              <div id="global-radar-events" class="global-radar-events"></div>
+              <p class="hotspots-note">英文标题保持官方原文，避免机器误译；无 Key 显示中文主题线索，配置 AI 后可点击进行中文深度解读。</p>
+            </section>
             <section class="intelligence-lifecycle-section">
               <div class="section-heading">
                 <div><h2>热点生命周期</h2><span>新闻热度只作辅助，阶段同时考虑重要度、时效和前后变化</span></div>
@@ -407,6 +417,20 @@
           </div>
           <div id="compass-content" class="hidden">
             <section id="compass-regime" class="compass-regime"></section>
+            <section class="market-breadth-section">
+              <div class="section-heading">
+                <div><h2>市场宽度与仓位档位</h2><span>涨跌家数、涨跌停、炸板、热点扩散与全球环境共同判断</span></div>
+                <button id="refresh-breadth" class="secondary-button" type="button">刷新宽度</button>
+              </div>
+              <div id="breadth-error" class="error-banner hidden"></div>
+              <div id="breadth-loading" class="loading-state hidden"><span class="spinner"></span><p>正在计算市场宽度</p></div>
+              <div id="breadth-content">
+                <div id="breadth-regime" class="breadth-regime"></div>
+                <div id="breadth-metrics" class="breadth-metrics"></div>
+                <div id="breadth-signals" class="breadth-signals"></div>
+                <p id="breadth-note" class="hotspots-note"></p>
+              </div>
+            </section>
             <section class="compass-columns">
               <div>
                 <div class="section-heading">
@@ -1019,6 +1043,15 @@
               <button id="refresh-trading-calendar" class="secondary-button" type="button">立即同步</button>
             </div>
           </section>
+          <section class="data-health-section">
+            <div class="section-heading">
+              <div><h2>数据健康中心</h2><span>统一查看已使用模块的来源、更新时间、降级与缺失状态</span></div>
+              <button id="refresh-data-health" class="secondary-button" type="button">更新状态</button>
+            </div>
+            <div id="data-health-summary" class="data-health-summary"></div>
+            <div id="data-health-list" class="data-health-list"></div>
+            <p class="hotspots-note">“尚未使用”不是接口故障；进入对应页面并刷新后，这里才会评估实际数据状态。</p>
+          </section>
           <section class="desktop-preferences windows-only">
             <div>
               <h2>Windows 桌面行为</h2>
@@ -1165,6 +1198,7 @@
     <script src="intelligence.js"></script>
     <script src="alerts.js"></script>
     <script src="research_assistant.js"></script>
+    <script src="data_health.js"></script>
     <script src="renderer.js"></script>
   </body>
 </html>

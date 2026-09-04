@@ -66,8 +66,10 @@ const {
 } = require("./ai_service.js");
 const { parseCompanyOrganization, parseStockAnnouncements, profileSecucode } = require("./company.js");
 const {
+  GLOBAL_OFFICIAL_FEEDS,
   attachMarketConfirmation,
   buildIntelligenceSnapshot,
+  parseOfficialRss,
   parseSinaRoll,
   parseWallstreetLives
 } = require("./intelligence.js");
@@ -78,6 +80,13 @@ const {
   normalizeEventInterpretation
 } = require("../src/intelligence.js");
 const { MACRO_SERIES, buildMacroSnapshot } = require("./macro.js");
+const { buildMarketRegime } = require("../src/market_regime.js");
+const {
+  LIMIT_POOL_DEFINITIONS,
+  mergeLimitPools,
+  parseExchangeBreadthPayload,
+  parseLimitPoolPayload
+} = require("./breadth.js");
 const {
   CONTEXT_ANSWER_SCHEMA,
   contextAssistantInput,
@@ -725,6 +734,107 @@ async function fetchHotspots() {
   });
 }
 
+function recentShanghaiWeekdays(limit = 8) {
+  const current = marketParts();
+  const cursor = new Date(Date.UTC(current.year, current.month - 1, current.day));
+  const output = [];
+  for (let offset = 0; offset < 14 && output.length < limit; offset += 1) {
+    const weekday = cursor.getUTCDay();
+    if (weekday !== 0 && weekday !== 6) output.push(cursor.toISOString().slice(0, 10).replaceAll("-", ""));
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+  }
+  return output;
+}
+
+async function fetchLimitPool(definition, date) {
+  const params = new URLSearchParams({
+    ut: "7eea3edcaed734bea9cbfc24409ed989",
+    dpt: "wz.ztzt",
+    Pageindex: "0",
+    pagesize: "1",
+    sort: definition.sort,
+    date
+  });
+  const payload = await requestJSON(
+    `https://push2ex.eastmoney.com/${definition.endpoint}?${params}`,
+    { headers: { Referer: "https://quote.eastmoney.com/" }, timeoutMs: 5500, attempts: 1 }
+  );
+  return parseLimitPoolPayload(payload, definition);
+}
+
+async function fetchLatestLimitPools() {
+  for (const date of recentShanghaiWeekdays()) {
+    try {
+      const first = await fetchLimitPool(LIMIT_POOL_DEFINITIONS[0], date);
+      if (!first) continue;
+      const rest = await Promise.allSettled(
+        LIMIT_POOL_DEFINITIONS.slice(1).map((definition) => fetchLimitPool(definition, date))
+      );
+      return mergeLimitPools([
+        first,
+        ...rest.map((result) => result.status === "fulfilled" ? result.value : null)
+      ]);
+    } catch {
+      // Try the previous weekday. Holidays and pre-open periods may not have a pool yet.
+    }
+  }
+  return mergeLimitPools([]);
+}
+
+async function fetchExchangeBreadth() {
+  const params = new URLSearchParams({
+    fltt: "2",
+    invt: "2",
+    fields: "f12,f14,f104,f105,f106",
+    secids: "1.000001,0.399001"
+  });
+  const payload = await firstAvailable("沪深涨跌家数", [
+    () => requestJSON(`https://push2delay.eastmoney.com/api/qt/ulist.np/get?${params}`),
+    () => requestJSON(`https://push2.eastmoney.com/api/qt/ulist.np/get?${params}`)
+  ]);
+  const breadth = parseExchangeBreadthPayload(payload);
+  if (!breadth) throw new Error("沪深涨跌家数暂不可用");
+  return breadth;
+}
+
+async function fetchMarketBreadth() {
+  const [hotspotsResult, compassResult, poolsResult, exchangeResult] = await Promise.allSettled([
+    cachedRequest("hotspots", 120000, fetchHotspots),
+    cachedRequest("market-compass", 60000, fetchMarketCompass),
+    cachedRequest("limit-pools", 60000, fetchLatestLimitPools),
+    cachedRequest("exchange-breadth", 30000, fetchExchangeBreadth)
+  ]);
+  const hotspots = hotspotsResult.status === "fulfilled" ? hotspotsResult.value : null;
+  const compass = compassResult.status === "fulfilled" ? compassResult.value : null;
+  const limitPools = poolsResult.status === "fulfilled" ? poolsResult.value : null;
+  const exchangeBreadth = exchangeResult.status === "fulfilled" ? exchangeResult.value : null;
+  const breadth = exchangeBreadth
+    ? {
+        ...exchangeBreadth,
+        industryAdvancingRate: hotspots?.summary?.breadth?.industryAdvancingRate ?? null,
+        medianBoardChange: hotspots?.summary?.breadth?.medianBoardChange ?? null,
+        industryCount: hotspots?.summary?.breadth?.industryCount ?? null
+      }
+    : hotspots?.summary?.breadth || {};
+  if (!breadth.measuredStocks && !limitPools?.date) throw new Error(FRIENDLY_MARKET_ERROR);
+  return buildMarketRegime({
+    asOf: new Date().toISOString(),
+    breadth,
+    limitPools: limitPools || {},
+    hotspotSummary: hotspots?.summary || {},
+    compassRegime: compass?.regime || {},
+    sourceStatus: {
+      partial: !exchangeBreadth || !hotspots || !compass || !limitPools?.date || limitPools.partial,
+      sources: [
+        { name: "东方财富沪深涨跌家数", available: Boolean(exchangeBreadth), asOf: new Date().toISOString() },
+        { name: "东方财富行业扩散", available: Boolean(hotspots?.summary?.breadth), asOf: hotspots?.asOf || "" },
+        { name: "东方财富涨跌停池", available: Boolean(limitPools?.date), asOf: limitPools?.date || "" },
+        { name: "腾讯/东方财富指数环境", available: Boolean(compass), asOf: compass?.asOf || "" }
+      ]
+    }
+  });
+}
+
 async function fetchBoardMembers(rawBoardCode) {
   const boardCode = String(rawBoardCode || "").trim().toUpperCase();
   if (!/^BK\d{4}$/.test(boardCode)) throw new Error("板块代码无效");
@@ -1051,7 +1161,20 @@ async function fetchIntelligenceEvents() {
         timeoutMs: 6500,
         attempts: 2
       }
-    )
+    ),
+    ...GLOBAL_OFFICIAL_FEEDS.map((source) => cachedRequest(
+      `official-intelligence:${source.key}`,
+      5 * 60000,
+      () => requestData(source.url, {
+        encoding: source.encoding,
+        headers: {
+          Accept: "application/rss+xml, application/xml, text/xml, */*"
+        },
+        parse: (text) => parseOfficialRss(text, source),
+        timeoutMs: 6500,
+        attempts: 1
+      })
+    ))
   ]);
   const wallstreet = requests[0].status === "fulfilled"
     ? parseWallstreetLives(requests[0].value)
@@ -1059,16 +1182,29 @@ async function fetchIntelligenceEvents() {
   const sina = requests[1].status === "fulfilled"
     ? parseSinaRoll(requests[1].value)
     : [];
-  if (!wallstreet.length && !sina.length) throw new Error(FRIENDLY_MARKET_ERROR);
+  const officialFeeds = GLOBAL_OFFICIAL_FEEDS.map((source, index) => ({
+    source,
+    events: requests[index + 2]?.status === "fulfilled" ? requests[index + 2].value : []
+  }));
+  const officialEvents = officialFeeds.flatMap((item) => item.events);
+  if (!wallstreet.length && !sina.length && !officialEvents.length) throw new Error(FRIENDLY_MARKET_ERROR);
   return {
-    events: [...wallstreet, ...sina],
+    events: [...wallstreet, ...sina, ...officialEvents],
     sourceStatus: {
       sources: [
         { name: "华尔街见闻7×24", available: wallstreet.length > 0, count: wallstreet.length },
-        { name: "新浪财经公开资讯", available: sina.length > 0, count: sina.length }
+        { name: "新浪财经公开资讯", available: sina.length > 0, count: sina.length },
+        ...officialFeeds.map(({ source, events }) => ({
+          name: source.name,
+          available: events.length > 0,
+          count: events.length,
+          official: true,
+          sourceCode: source.key
+        }))
       ],
-      partial: !wallstreet.length || !sina.length,
-      note: "仅保留公开标题、摘要、时间与原文链接；不抓取或转载付费正文"
+      partial: !wallstreet.length || !sina.length || officialFeeds.some((item) => !item.events.length),
+      officialCount: officialEvents.length,
+      note: "全球雷达只读取官方RSS标题、摘要、原始发布时间和链接；不抓取或转载彭博、路透等付费正文"
     }
   };
 }
@@ -1370,7 +1506,8 @@ async function runAiContextAssistant(value = {}) {
     ...(clean.context?.stockFacts?.sources || []),
     clean.context?.stockFacts?.quote?.source,
     ...(clean.context?.intelligence?.events || []).map((item) => item.source),
-    ...(clean.context?.macro?.indicators || []).flatMap((item) => [item.originalSource, item.aggregator])
+    ...(clean.context?.macro?.indicators || []).flatMap((item) => [item.originalSource, item.aggregator]),
+    ...(clean.context?.marketBreadth?.sourceStatus?.sources || []).map((item) => item.name)
   ].map((item) => String(item || "").trim()).filter(Boolean));
   answer.sourceLabels = answer.sourceLabels.filter((item) => allowedSources.has(item));
   if (!answer.sourceLabels.length) answer.sourceLabels = [...allowedSources].slice(0, 8);
@@ -1695,6 +1832,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   );
   ipcMain.handle("market:hotspots", (_, options = {}) =>
     cachedRequest("hotspots", 120000, () => fetchHotspots(), options.force)
+  );
+  ipcMain.handle("market:breadth", (_, options = {}) =>
+    cachedRequest("market-breadth", 60000, fetchMarketBreadth, options.force)
   );
   ipcMain.handle("market:board-members", (_, boardCode, options = {}) =>
     cachedRequest(`board:${boardCode}`, 300000, () => fetchBoardMembers(boardCode), options.force)
