@@ -844,7 +844,7 @@
           <div class="page-heading">
             <div>
               <h1>持仓管理</h1>
-              <p>只保存在当前 Mac，不上传账户数据</p>
+              <p>只保存在当前设备，不上传账户数据</p>
             </div>
             <button id="add-holding" class="primary-button">
               <i data-lucide="plus"></i>
@@ -915,6 +915,9 @@
                 <span>单边滑点率</span>
                 <input name="slippageRate" type="number" min="0" step="0.0001">
               </label>
+            </fieldset>
+            <fieldset>
+              <legend>风险与仓位</legend>
               <label>
                 <span>单笔风险预算（%）</span>
                 <input name="riskPerTradePercent" type="number" min="0.1" max="5" step="0.05">

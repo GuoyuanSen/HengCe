@@ -233,6 +233,8 @@ test("Windows uses its native titlebar and compact sidebar spacing", () => {
   assert.match(styles, /html\[data-platform="win32"\] \.titlebar[\s\S]*?display:\s*none/);
   assert.match(styles, /html\[data-platform="win32"\] \.sidebar[\s\S]*?padding-top:\s*8px/);
   assert.match(styles, /html\[data-platform="win32"\] \.toolbar[\s\S]*?-webkit-app-region:\s*no-drag/);
+  assert.match(styles, /\.desktop-preferences\.windows-only\s*\{\s*display:\s*none/);
+  assert.match(styles, /html\[data-platform="win32"\] \.desktop-preferences\.windows-only\s*\{\s*display:\s*flex/);
 });
 
 test("Windows can minimize to tray while keeping background work alive", () => {
@@ -316,6 +318,7 @@ test("trading calendar sync is official, cached, visible and fail-closed", () =>
   assert.match(html, /id="trading-calendar-status"/);
   assert.match(html, /id="refresh-trading-calendar"/);
   assert.match(renderer, /mergeOfficialCalendar/);
+  assert.match(styles, /\.desktop-preferences\s*\{[\s\S]*?display:\s*flex/);
 });
 
 test("sidebar exposes version and updates while holdings accept name search", () => {

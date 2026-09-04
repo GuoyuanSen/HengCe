@@ -1737,6 +1737,7 @@ h2 {
 
 .recommendation-table {
   min-width: 1180px;
+  table-layout: fixed;
 }
 
 .recommendation-table th:first-child,
@@ -1744,6 +1745,13 @@ h2 {
   width: 54px;
   text-align: center;
 }
+
+.recommendation-table th:nth-child(2) { width: 170px; }
+.recommendation-table th:nth-child(3) { width: 110px; }
+.recommendation-table th:nth-child(4) { width: 116px; }
+.recommendation-table th:nth-child(5) { width: 220px; }
+.recommendation-table th:nth-child(6) { width: 72px; }
+.recommendation-table th:last-child { width: 82px; }
 
 .recommendation-table th:nth-child(2),
 .recommendation-table td:nth-child(2),
@@ -1758,11 +1766,31 @@ h2 {
 }
 
 .recommendation-reasons {
-  max-width: 330px;
+  display: -webkit-box;
+  overflow: hidden;
+  width: 100%;
+  max-width: 100%;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.55;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
+
+.recommendation-table th:last-child,
+.recommendation-table td:last-child {
+  position: sticky;
+  z-index: 2;
+  right: 0;
+  min-width: 72px;
+  background: var(--panel);
+  box-shadow: -8px 0 12px -12px rgba(20, 29, 38, 0.5);
+}
+
+.recommendation-table th:last-child { background: var(--surface-soft); }
+.recommendation-row:hover td:last-child,
+.recommendation-row:focus-visible td:last-child { background: var(--surface-soft); }
 
 .factor-breakdown {
   display: grid;
@@ -3502,8 +3530,8 @@ tbody tr:hover {
 
 .settings-form {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 34px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 28px;
   padding: 19px 0 24px;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
@@ -3518,14 +3546,29 @@ html[data-platform="win32"] .windows-only {
 }
 
 .desktop-preferences {
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
+  gap: 28px;
+  min-height: 76px;
   margin-top: 20px;
-  padding: 15px 17px;
+  padding: 16px 18px;
   border: 1px solid var(--line);
   border-radius: 7px;
   background: var(--panel);
+}
+
+.desktop-preferences.windows-only { display: none; }
+
+html[data-platform="win32"] .desktop-preferences.windows-only { display: flex; }
+
+.desktop-preferences > div:first-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.desktop-preferences h2 {
+  line-height: 1.25;
 }
 
 .desktop-preferences p {
@@ -3549,17 +3592,20 @@ html[data-platform="win32"] .windows-only {
 
 .preference-select {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 10px;
   color: var(--muted);
   font-size: 11px;
 }
 
-.preference-select select { min-width: 120px; }
+.preference-select select { min-width: 136px; }
 
 .calendar-preference-actions {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
 }
 
@@ -3829,6 +3875,21 @@ dialog label {
 }
 
 @media (max-width: 1180px) {
+  .settings-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-form fieldset:last-child {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-form fieldset:last-child legend { grid-column: 1 / -1; }
+
+  .desktop-preferences {
+    gap: 18px;
+  }
+
   .hotspot-members-grid {
     grid-template-columns: 1fr;
   }
