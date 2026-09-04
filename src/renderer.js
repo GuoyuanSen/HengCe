@@ -83,6 +83,7 @@ if (!window.hengce && isBrowserPreview) {
       source: "浏览器演示数据"
     }),
     klines: async () => demoBars,
+    indexKlines: async () => demoBars.map((bar) => ({ ...bar, open: 100, close: 100, high: 101, low: 99 })),
     indices: async () => [
       { code: "000001", name: "上证指数", price: 3584.21, percentChange: 0.42 },
       { code: "399001", name: "深证成指", price: 10921.66, percentChange: -0.18 },
@@ -97,7 +98,10 @@ if (!window.hengce && isBrowserPreview) {
         { symbol: "usDJI", name: "道琼斯", price: 45201.35, percentChange: 0.18, timestamp: "最近交易时段", source: "浏览器演示数据" },
         { symbol: "hkHSI", name: "恒生指数", price: 25120.4, percentChange: -0.2, timestamp: "当前交易时段", source: "浏览器演示数据" },
         { symbol: "hkHSTECH", name: "恒生科技", price: 4488.3, percentChange: 0.15, timestamp: "当前交易时段", source: "浏览器演示数据" },
-        { symbol: "usHXC", name: "中概股", price: 6051.33, percentChange: -0.05, timestamp: "最近交易时段", source: "浏览器演示数据" }
+        { symbol: "usHXC", name: "中概股", price: 6051.33, percentChange: -0.05, timestamp: "最近交易时段", source: "浏览器演示数据" },
+        { symbol: "jpN225", name: "日经225", price: 42120.18, percentChange: 0.41, timestamp: "当前交易时段", source: "浏览器演示数据" },
+        { symbol: "krKOSPI", name: "韩国KOSPI", price: 3288.72, percentChange: 0.86, timestamp: "当前交易时段", source: "浏览器演示数据" },
+        { symbol: "twTWII", name: "台湾加权", price: 24580.32, percentChange: 0.62, timestamp: "当前交易时段", source: "浏览器演示数据" }
       ],
       domesticMarkets: [
         { code: "000001", name: "上证指数", price: 3584.21, percentChange: 0.42 },
@@ -111,8 +115,17 @@ if (!window.hengce && isBrowserPreview) {
         { code: "000852", name: "中证1000", style: "小盘", price: 7599.87, percentChange: 0.21, representatives: [{ code: "301217", name: "铜冠铜箔" }, { code: "688519", name: "南亚新材" }, { code: "002428", name: "云南锗业" }] },
         { code: "000688", name: "科创50", style: "科技成长", price: 1615.03, percentChange: -0.16, representatives: [{ code: "688256", name: "寒武纪" }, { code: "688012", name: "中微公司" }, { code: "688981", name: "中芯国际" }] }
       ],
+      semiconductorMarkets: [
+        { symbol: "usSOX", name: "费城半导体指数", group: "美国", chainRole: "全球风险偏好", price: 5840.2, percentChange: 1.12, timestamp: "最近交易时段", source: "浏览器演示数据" },
+        { symbol: "krSamsung", name: "三星电子", group: "韩国", chainRole: "存储与消费电子", price: 84200, percentChange: 1.45, timestamp: "当前交易时段", source: "浏览器演示数据" },
+        { symbol: "krHynix", name: "SK海力士", group: "韩国", chainRole: "HBM与存储周期", price: 292000, percentChange: 2.12, timestamp: "当前交易时段", source: "浏览器演示数据" },
+        { symbol: "jpTEL", name: "Tokyo Electron", group: "日本", chainRole: "半导体设备", price: 28550, percentChange: 0.35, timestamp: "当前交易时段", source: "浏览器演示数据" },
+        { symbol: "jpAdvantest", name: "爱德万测试", group: "日本", chainRole: "测试设备", price: 12420, percentChange: 0.92, timestamp: "当前交易时段", source: "浏览器演示数据" },
+        { symbol: "usTSM", name: "台积电ADR", group: "中国台湾", chainRole: "先进制程代工", price: 246.18, percentChange: 0.78, timestamp: "最近交易时段", source: "浏览器演示数据" }
+      ],
+      semiconductorPulse: { change: 1.12, label: "偏强", coverage: 6, expected: 6 },
       signals: ["美股科技方向温和回暖", "港股科技情绪中性", "A股主要指数维持震荡", "大盘核心相对占优，科技成长偏弱"],
-      sourceStatus: { globalSource: "浏览器演示数据", domesticSource: "浏览器演示数据", styleSource: "浏览器演示数据", loaded: 14, expected: 14, partial: false },
+      sourceStatus: { globalSource: "浏览器演示数据", semiconductorSource: "浏览器演示数据", domesticSource: "浏览器演示数据", styleSource: "浏览器演示数据", loaded: 23, expected: 23, partial: false },
       note: "风向标描述市场环境，不预测单只股票，也不构成交易建议。"
     }),
     breadth: async () => ({
@@ -402,6 +415,16 @@ if (!window.hengce && isBrowserPreview) {
         { id: "demo-ann-2", code, title: "关于半年度利润分配方案的公告", publishedAt: "2026-08-21", columns: ["利润分配"], kind: { key: "capital", label: "资本动作", importance: 70 }, url: "https://example.com" }
       ]
     }),
+    catalysts: async (codes) => ({
+      asOf: new Date().toISOString(),
+      codes,
+      sourceStatus: { loaded: 4, requested: 4, partial: false },
+      events: [
+        { id: "demo-report", code: codes[0] || "603039", name: "泛微网络", type: "earnings", typeLabel: "财报披露", title: "2026年三季报预约披露", scheduledAt: "2026-10-28", impact: "mixed", detail: "预约日期可能调整", source: "浏览器演示披露日历", manual: false },
+        { id: "demo-unlock", code: codes[1] || codes[0] || "002475", name: "立讯精密", type: "unlock", typeLabel: "限售解禁", title: "股权激励限售股份解禁", scheduledAt: "2026-09-18", impact: "negative", detail: "解禁不等于实际减持", source: "浏览器演示披露日历", manual: false }
+      ],
+      note: "浏览器演示催化剂日历"
+    }),
     intelligence: async () => {
       const ago = (minutes) => new Date(Date.now() - minutes * 60000).toISOString();
       const events = [
@@ -466,10 +489,10 @@ if (!window.hengce && isBrowserPreview) {
     notify: async () => true,
     openExternal: async (url) => window.open(url, "_blank"),
     checkForUpdate: async () => ({
-      currentVersion: "0.6.0",
-      latestVersion: "0.6.0",
-      tagName: "v0.6.0",
-      releaseName: "衡策 v0.6.0",
+      currentVersion: "0.7.0",
+      latestVersion: "0.7.0",
+      tagName: "v0.7.0",
+      releaseName: "衡策 v0.7.0",
       releaseNotes: "新增应用内更新检查、下载进度和 SHA-256 完整性校验。",
       assetName: "HengCe-Apple-Silicon.dmg",
       assetSize: 136e6,
@@ -477,9 +500,11 @@ if (!window.hengce && isBrowserPreview) {
       downloadable: true,
       available: false
     }),
-    appVersion: async () => "0.6.0",
+    appVersion: async () => "0.7.0",
     downloadUpdate: async () => ({ downloaded: true, fileName: "HengCe-Apple-Silicon.dmg" }),
     installUpdate: async () => ({ opened: true, willQuit: false }),
+    saveBackup: async () => ({ saved: true, fileName: "HengCe-Demo.hengce-backup", encrypted: false }),
+    openBackup: async () => ({ opened: false, canceled: true }),
     setWindowPreferences: async (preferences) => preferences,
     aiSettings: async () => ({
       baseUrl: "https://api.openai.com/v1",
@@ -507,6 +532,7 @@ if (!window.hengce) {
     search: unavailable,
     quote: unavailable,
     klines: unavailable,
+    indexKlines: unavailable,
     indices: unavailable,
     compass: unavailable,
     breadth: unavailable,
@@ -518,6 +544,7 @@ if (!window.hengce) {
     overnight: unavailable,
     profile: unavailable,
     announcements: unavailable,
+    catalysts: unavailable,
     intelligence: unavailable,
     macro: unavailable,
     notify: async () => false,
@@ -526,6 +553,8 @@ if (!window.hengce) {
     appVersion: unavailable,
     downloadUpdate: unavailable,
     installUpdate: unavailable,
+    saveBackup: unavailable,
+    openBackup: unavailable,
     setWindowPreferences: unavailable,
     aiSettings: unavailable,
     saveAiSettings: unavailable,
@@ -552,6 +581,24 @@ const {
   setPrimaryHolding
 } = window.HengCePreferences;
 const { buildObservationPlan } = window.HengCeTradePlan;
+const {
+  applyTradeToHoldings,
+  buildTradeReview,
+  estimateFees,
+  normalizeTrade
+} = window.HengCeTradeJournal;
+const {
+  buildActionCenter,
+  buildPlanDraft,
+  captureSignals,
+  evaluateTradePlan,
+  mergeCatalysts,
+  normalizeCatalyst,
+  normalizePlan,
+  settleSignal,
+  summarizeSignals
+} = window.HengCeTradingWorkspace;
+const { collectBackup, restoreBackup } = window.HengCeLocalBackup;
 const {
   marketParts,
   mergeOfficialCalendar,
@@ -611,11 +658,16 @@ const storedIntelligenceSeen = readJSON("hengce.intelligence.seen.v1", []);
 const storedIntelligenceBookmarks = readJSON("hengce.intelligence.bookmarks.v1", []);
 const storedAlertPreferences = readJSON("hengce.alertPreferences.v1", DEFAULT_ALERT_PREFERENCES);
 const storedAssistantHistory = readJSON("hengce.aiAssistant.v1", []);
+const storedTradeJournal = readJSON("hengce.tradeJournal.v1", []);
+const storedTradePlans = readJSON("hengce.tradePlans.v1", []);
+const storedManualCatalysts = readJSON("hengce.manualCatalysts.v1", []);
+const storedSignalJournal = readJSON("hengce.signalJournal.v1", []);
+const storedCatalystSnapshot = readJSON("hengce.catalysts.snapshot.v1", null);
 const OVERNIGHT_MARKET_SCOPES = ["main", "main-growth", "main-star", "all"];
 const storedOvernightMarketScope = OVERNIGHT_MARKET_SCOPES.includes(storedUi.overnightMarketScope)
   ? storedUi.overnightMarketScope
   : "main";
-const VIEW_NAMES = ["dashboard", "hotspots", "intelligence", "compass", "recommendations", "overnight", "watchlist", "ai", "backtest", "holdings", "settings"];
+const VIEW_NAMES = ["dashboard", "hotspots", "recommendations", "intelligence", "compass", "ai", "overnight", "watchlist", "trading", "backtest", "holdings", "settings"];
 const requestedView = new URLSearchParams(window.location.search).get("view");
 const requestedStock = normalizeCode(new URLSearchParams(window.location.search).get("stock"));
 const requestedTheme = new URLSearchParams(window.location.search).get("theme");
@@ -712,9 +764,10 @@ const state = {
   analysis: null,
   intraday: [],
   intradayError: "",
-  chartMode: storedUi.chartMode === "daily" ? "daily" : "intraday",
+  chartMode: "intraday",
   chartHoverIndex: null,
   chartRange: [60, 120, 250].includes(Number(storedUi.chartRange)) ? Number(storedUi.chartRange) : 120,
+  chartHistoryLoading: false,
   strategy: ["movingAverage", "breakout", "rsiReversal"].includes(storedUi.strategy) ? storedUi.strategy : "movingAverage",
   backtestYears: [1, 3, 5].includes(Number(storedUi.backtestYears)) ? Number(storedUi.backtestYears) : 3,
   holdings: storedHoldings,
@@ -723,6 +776,15 @@ const state = {
   profiles: new Map(),
   portfolioRisk: null,
   portfolioRiskLoading: false,
+  tradeJournal: Array.isArray(storedTradeJournal) ? storedTradeJournal.map(normalizeTrade).filter(Boolean).slice(0, 800) : [],
+  tradePlans: Array.isArray(storedTradePlans) ? storedTradePlans.map(normalizePlan).filter(Boolean).slice(0, 120) : [],
+  manualCatalysts: Array.isArray(storedManualCatalysts) ? storedManualCatalysts.map(normalizeCatalyst).filter(Boolean).slice(0, 200) : [],
+  catalystSnapshot: storedCatalystSnapshot?.events ? storedCatalystSnapshot : null,
+  catalystCodesKey: Array.isArray(storedCatalystSnapshot?.codes) ? [...storedCatalystSnapshot.codes].sort().join(",") : "",
+  catalystsLoading: false,
+  catalystsError: "",
+  signalJournal: Array.isArray(storedSignalJournal) ? storedSignalJournal.slice(0, 300) : [],
+  signalJournalSettling: false,
   alertPreferences: normalizeAlertPreferences(storedAlertPreferences),
   settings: { ...DEFAULT_SETTINGS, ...readJSON("hengce.settings.v1", {}) },
   updateInfo: null,
@@ -732,6 +794,7 @@ const state = {
   updateDownloaded: false,
   updateProgress: null,
   updateMessage: "启动后会自动检查 GitHub Release 的正式版本",
+  updateError: "",
   windowPreferences: {
     minimizeToTray: storedWindowPreferences.minimizeToTray !== false
   },
@@ -866,7 +929,6 @@ function saveUiState() {
   writeJSON("hengce.ui.v1", {
     activeView: state.activeView,
     hotspotMode: state.hotspotMode,
-    chartMode: state.chartMode,
     chartRange: state.chartRange,
     strategy: state.strategy,
     backtestYears: state.backtestYears,
@@ -966,6 +1028,36 @@ function setLoading(loading, { preserveContent = false } = {}) {
   $("#refresh-button").classList.toggle("rotating", loading);
 }
 
+function setDashboardLoadingLabel(message) {
+  const label = $("#dashboard-loading-label");
+  if (label) label.textContent = message;
+}
+
+function renderQuotePreview(quote) {
+  if (!quote) return;
+  state.quote = quote;
+  const change = quote.price - quote.previousClose;
+  $("#quote-title").innerHTML = `<strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quote.code)}</span>`;
+  $("#current-price").textContent = number(quote.price);
+  $("#current-price").className = directionClass(quote.percentChange);
+  $("#quote-change").textContent = `${change >= 0 ? "+" : ""}${number(change)}  ${percent(quote.percentChange)}`;
+  $("#quote-change").className = directionClass(quote.percentChange);
+  $("#quote-open").textContent = number(quote.open);
+  $("#quote-high").textContent = number(quote.high);
+  $("#quote-low").textContent = number(quote.low);
+  $("#quote-amount").textContent = compactMoney(quote.amount);
+  if (!state.analysis) {
+    $("#metric-grid").innerHTML = ["量化评分", "日内区间", "成交额", "支撑 / 压力", "持仓"].map((label) => `
+      <div class="metric-cell"><span>${label}</span><strong><i class="skeleton short"></i></strong><small>正在补齐历史K线</small></div>
+    `).join("");
+  }
+  $("#dashboard-loading").classList.add("hidden");
+  $("#dashboard-content").classList.remove("hidden");
+  $("#dashboard-data-status").innerHTML = '<span class="status-dot"></span><span>最新报价已返回，正在计算量化结构</span><small>其余卡片将分阶段补齐，无需再次点击分析</small>';
+  $("#dashboard-data-status").classList.remove("hidden");
+  $("#update-time").textContent = "报价已返回 · 正在计算";
+}
+
 function showError(message) {
   const banner = $("#error-banner");
   banner.textContent = message;
@@ -985,6 +1077,20 @@ function friendlyMarketError(error) {
     return "行情服务暂时无响应，请检查网络后重试。";
   }
   return message;
+}
+
+function friendlyUpdateError(error) {
+  const message = String(error?.message || error || "").replace(
+    /^Error invoking remote method '[^']+': Error:\s*/,
+    ""
+  );
+  if (/HTTP\s*(403|429)|访问频率受限/i.test(message)) {
+    return "GitHub 版本服务访问频率受限，可稍后重试或打开官方下载页。";
+  }
+  if (!message || /ERR_|fetch failed|aborted|network|空响应/i.test(message)) {
+    return "GitHub 版本服务暂时无响应，可稍后重试或打开官方下载页。";
+  }
+  return message.replace(/^行情服务/, "GitHub 版本服务");
 }
 
 function renderStockSearchResults(results) {
@@ -1121,6 +1227,16 @@ function saveDashboardSnapshot(code, quote, bars) {
   );
 }
 
+function mergeDashboardBars(cachedBars = [], freshBars = []) {
+  const byDate = new Map();
+  [...cachedBars, ...freshBars].forEach((bar) => {
+    if (bar?.date) byDate.set(bar.date, bar);
+  });
+  return [...byDate.values()]
+    .sort((left, right) => String(left.date).localeCompare(String(right.date)))
+    .slice(-300);
+}
+
 async function loadMarketData(code = $("#stock-code").value, { force = false } = {}) {
   const normalized = String(code).trim().toLowerCase().replace(/^sh|^sz/, "");
   if (!/^\d{6}$/.test(normalized)) {
@@ -1151,6 +1267,7 @@ async function loadMarketData(code = $("#stock-code").value, { force = false } =
   state.announcementsLoading = true;
   state.announcementsError = "";
   $("#stock-code").value = normalized;
+  setDashboardLoadingLabel(showingExisting ? "正在后台更新最新行情" : "正在读取最新报价");
   setLoading(true, { preserveContent: showingExisting });
   showError("");
   renderValuation();
@@ -1172,17 +1289,24 @@ async function loadMarketData(code = $("#stock-code").value, { force = false } =
     const announcementRequest = window.hengce
       .announcements(normalized, options)
       .catch((error) => ({ error: friendlyMarketError(error) }));
-    const [quote, bars] = await Promise.all([
-      window.hengce.quote(normalized, options),
-      window.hengce.klines(normalized, 300, options)
-    ]);
+    const quoteRequest = window.hengce.quote(normalized, options);
+    const barsRequest = window.hengce.klines(normalized, 180, options);
+    quoteRequest.then((quote) => {
+      if (request !== marketLoadRequest || state.code !== normalized) return;
+      state.quotes.set(quote.code, quote);
+      if (!showingExisting) renderQuotePreview(quote);
+      setDashboardLoadingLabel("报价已返回，正在计算历史量价结构");
+    }).catch(() => {});
+    const [quote, bars] = await Promise.all([quoteRequest, barsRequest]);
     if (request !== marketLoadRequest) return false;
     state.quote = quote;
-    state.bars = bars;
+    state.bars = showingExisting && state.bars.length > bars.length
+      ? mergeDashboardBars(state.bars, bars)
+      : bars;
     state.indices = [];
-    state.analysis = analyze(bars);
+    state.analysis = analyze(state.bars);
     state.dashboardSnapshotStale = false;
-    saveDashboardSnapshot(normalized, quote, bars);
+    saveDashboardSnapshot(normalized, quote, state.bars);
     writeJSON("hengce.lastStock.v1", normalized);
     state.quotes.set(quote.code, quote);
     renderDashboard();
@@ -1247,9 +1371,10 @@ async function loadMarketData(code = $("#stock-code").value, { force = false } =
 }
 
 async function loadInitialMarketData() {
-  for (const code of startupCodeCandidates) {
-    if (await loadMarketData(code)) return;
-  }
+  const code = startupCodeCandidates[0] || resolveInitialCode();
+  if (await loadMarketData(code)) return;
+  const cachedFallback = startupCodeCandidates.slice(1).find((candidate) => dashboardSnapshotFor(candidate));
+  if (cachedFallback) await loadMarketData(cachedFallback);
 }
 
 function valuationMetric(label, value, detail = "") {
@@ -2297,6 +2422,10 @@ function marketTimestamp(value) {
   const raw = String(value || "").trim();
   const compact = raw.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/);
   if (compact) return `${compact[1]}-${compact[2]}-${compact[3]} ${compact[4]}:${compact[5]}`;
+  const parsed = new Date(raw);
+  if (raw && !Number.isNaN(parsed.getTime())) {
+    return parsed.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+  }
   return raw || "当前数据";
 }
 
@@ -2333,6 +2462,18 @@ function renderCompass() {
   `;
   $("#compass-global").innerHTML = (snapshot.globalMarkets || []).map(compassMarketCard).join("") || '<span class="muted">全球指数暂不可用</span>';
   $("#compass-domestic").innerHTML = (snapshot.domesticMarkets || []).map(compassMarketCard).join("") || '<span class="muted">A股指数暂不可用</span>';
+  const semiconductorPulse = snapshot.semiconductorPulse || {};
+  $("#semiconductor-pulse").textContent = semiconductorPulse.change == null
+    ? "数据不足"
+    : `${semiconductorPulse.label} · ${percent(semiconductorPulse.change)}`;
+  $("#semiconductor-pulse").className = `data-confidence ${semiconductorPulse.change == null ? "low" : ""}`.trim();
+  $("#semiconductor-markets").innerHTML = (snapshot.semiconductorMarkets || []).map((item) => `
+    <div class="semiconductor-market-card">
+      <span>${escapeHTML(item.group || "全球")} · ${escapeHTML(item.chainRole || "半导体")}</span>
+      <strong>${escapeHTML(item.name)} <em class="${directionClass(item.percentChange)}">${percent(item.percentChange)}</em></strong>
+      <small>${number(item.price)} · ${escapeHTML(marketTimestamp(item.timestamp))} · ${escapeHTML(item.source || "公开行情")}</small>
+    </div>
+  `).join("") || '<span class="muted">全球半导体链暂不可用</span>';
   $("#compass-styles").innerHTML = (snapshot.styleMarkets || []).map((item) => `
     <div class="compass-style-card">
       <span>${escapeHTML(item.style || item.name)}</span>
@@ -2358,7 +2499,7 @@ function renderCompass() {
     minute: "2-digit"
   });
   $("#compass-note").textContent =
-    `数据时间 ${timestamp} · 全球：${snapshot.sourceStatus?.globalSource || "暂缺"} · A股：${snapshot.sourceStatus?.domesticSource || "暂缺"} · 风格及代表成分：${snapshot.sourceStatus?.styleSource || "暂缺"}${snapshot.sourceStatus?.partial ? " · 部分数据暂缺" : ""}。代表成分按公开指数权重或流通规模展示，不代表推荐。${snapshot.note || "风向标不构成投资建议。"}`;
+    `数据时间 ${timestamp} · 全球：${snapshot.sourceStatus?.globalSource || "暂缺"} · 半导体链：${snapshot.sourceStatus?.semiconductorSource || "暂缺"} · A股：${snapshot.sourceStatus?.domesticSource || "暂缺"} · 风格及代表成分：${snapshot.sourceStatus?.styleSource || "暂缺"}${snapshot.sourceStatus?.partial ? " · 部分数据暂缺" : ""}。代表成分按公开指数权重或流通规模展示，不代表推荐；海外走势只作联动参照。${snapshot.note || "风向标不构成投资建议。"}`;
   refreshIcons();
 }
 
@@ -2524,6 +2665,7 @@ async function loadRecommendations({ force = false } = {}) {
   renderRecommendations();
   try {
     state.recommendations = await window.hengce.recommendations({ force });
+    captureRecommendationSignals(state.recommendations);
   } catch (error) {
     state.recommendationsError = friendlyMarketError(error);
   } finally {
@@ -2862,6 +3004,17 @@ async function loadOvernight({ force = false } = {}) {
     }));
     state.overnight = snapshot;
     persistOvernightForwardSnapshot(snapshot);
+    if ((snapshot.picks || []).length) {
+      state.signalJournal = captureSignals(state.signalJournal, snapshot.picks.map((item) => ({
+        code: item.code,
+        name: item.name,
+        industry: item.industry,
+        price: item.price,
+        score: item.score,
+        riskLine: item.riskLine
+      })), { source: "尾盘观察", asOf: snapshot.asOf });
+      persistTradingState();
+    }
     const newPicks = (snapshot.picks || []).filter((item) => !previousCodes.has(item.code));
     if (!isBrowserPreview && newPicks.length && !$("#overnight-view").classList.contains("active")) {
       window.hengce.notify(
@@ -2967,6 +3120,22 @@ function renderCompanyAnnouncements() {
   );
 }
 
+function companyProfileParagraphs(value) {
+  const sentences = String(value || "").split(/(?<=[。！？；])/).map((item) => item.trim()).filter(Boolean);
+  const paragraphs = [];
+  let current = "";
+  sentences.forEach((sentence) => {
+    if (current && current.length + sentence.length > 170) {
+      paragraphs.push(current);
+      current = sentence;
+    } else {
+      current += sentence;
+    }
+  });
+  if (current) paragraphs.push(current);
+  return paragraphs.length ? paragraphs : [String(value || "")];
+}
+
 function renderCompanyProfile() {
   const profile = state.companyProfile;
   const organization = profile?.organization;
@@ -3015,7 +3184,7 @@ function renderCompanyProfile() {
     <div class="company-profile-about">
       <h3>公司简介</h3>
       <p class="company-profile-preview">${escapeHTML(preview)}</p>
-      ${companyProfile.length > 240 ? `<details><summary>展开完整简介</summary><p>${escapeHTML(companyProfile)}</p></details>` : ""}
+      ${companyProfile.length > 240 ? `<details><summary>展开完整简介</summary><div class="company-profile-full">${companyProfileParagraphs(companyProfile).map((paragraph) => `<p>${escapeHTML(paragraph)}</p>`).join("")}</div></details>` : ""}
       <div class="company-facts">${facts.map((item) => `<span>${escapeHTML(item)}</span>`).join("")}</div>
     </div>
   `;
@@ -3157,6 +3326,7 @@ function renderDashboard() {
   `;
   renderDefaultStockButton();
   renderObservationPlan();
+  renderTradingWorkspace();
   schedulePriceChart();
   refreshIcons();
 }
@@ -3612,6 +3782,26 @@ function schedulePriceChart() {
   });
 }
 
+async function ensureChartRangeHistory({ force = false } = {}) {
+  if (state.chartHistoryLoading || state.bars.length >= 300 || state.chartRange < 250) return;
+  const code = state.code;
+  state.chartHistoryLoading = true;
+  $("#chart-caption").textContent = "正在补齐250日日K…";
+  try {
+    const bars = await window.hengce.klines(code, 300, { force });
+    if (state.code !== code || bars.length < state.bars.length) return;
+    state.bars = bars;
+    state.analysis = analyze(bars);
+    if (state.quote) saveDashboardSnapshot(code, state.quote, bars);
+    renderDashboard();
+  } catch (error) {
+    showToast(`250日图表加载失败：${friendlyMarketError(error)}`);
+  } finally {
+    state.chartHistoryLoading = false;
+    if (state.quote && state.analysis) renderDashboard();
+  }
+}
+
 async function ensureBacktestHistory({ force = false } = {}) {
   if (!state.quote || state.bars.length < 60 || state.backtestHistoryLoading) return;
   if (!force && state.backtestHistoryCode === state.code) {
@@ -3910,6 +4100,7 @@ async function updatePortfolioRisk() {
   );
   state.portfolioRiskLoading = false;
   renderPortfolioRisk();
+  renderTradingWorkspace();
 }
 
 function renderHoldings() {
@@ -3975,6 +4166,7 @@ function renderHoldings() {
           <td>${recovery == null ? "--" : recovery <= 0 ? "已回本" : percent(recovery, true)}</td>
           <td>
             <div class="table-actions">
+              <button class="table-action record-holding-trade" data-code="${holding.code}" title="记录真实交易"><i data-lucide="notebook-pen"></i></button>
               <button class="table-action edit-holding" data-code="${holding.code}" title="记录或调整持仓"><i data-lucide="pencil"></i></button>
               <button class="table-action primary-holding ${holding.primary ? "active" : ""}" data-code="${holding.code}" title="${holding.primary ? "取消主仓" : "设为主仓"}"><i data-lucide="star"></i></button>
               <button class="table-action analyze-holding" data-code="${holding.code}" title="进入分析"><i data-lucide="arrow-up-right"></i></button>
@@ -4004,6 +4196,12 @@ function renderHoldings() {
     button.addEventListener("click", () => {
       const holding = state.holdings.find((item) => item.code === button.dataset.code);
       if (holding) openHoldingDialog(holding);
+    })
+  );
+  $$(".record-holding-trade").forEach((button) =>
+    button.addEventListener("click", () => {
+      const holding = state.holdings.find((item) => item.code === button.dataset.code);
+      if (holding) openTradeDialog({ code: holding.code, name: holding.name, price: state.quotes.get(holding.code)?.price || holding.cost, shares: Math.min(holding.shares, 100), side: "sell", strategy: "手工判断" });
     })
   );
   $$(".primary-holding").forEach((button) =>
@@ -4075,6 +4273,589 @@ function addCurrentStockToWatchlist() {
   showToast(`${state.quote.name} 已加入观察提醒`);
 }
 
+function persistTradingState() {
+  writeJSON("hengce.tradeJournal.v1", state.tradeJournal.slice(0, 800));
+  writeJSON("hengce.tradePlans.v1", state.tradePlans.slice(0, 120));
+  writeJSON("hengce.manualCatalysts.v1", state.manualCatalysts.slice(0, 200));
+  writeJSON("hengce.signalJournal.v1", state.signalJournal.slice(0, 300));
+}
+
+function catalystCodes() {
+  return [...new Set([
+    state.code,
+    ...state.holdings.map((item) => item.code),
+    ...state.watchlist.map((item) => item.code),
+    ...state.tradePlans.map((item) => item.code)
+  ].map(normalizeCode).filter(Boolean))].slice(0, 16);
+}
+
+function announcementCatalysts() {
+  return (state.announcements?.announcements || [])
+    .filter((item) => Number(item.kind?.importance || 0) >= 66)
+    .map((item) => ({
+      id: `announcement-${item.id}`,
+      code: item.code || state.code,
+      name: state.quote?.code === (item.code || state.code) ? state.quote.name : item.code,
+      title: item.title,
+      type: item.kind?.key || "announcement",
+      typeLabel: item.kind?.label || "公司公告",
+      scheduledAt: item.publishedAt,
+      impact: item.kind?.key === "risk" || item.kind?.key === "holding" ? "negative" : "mixed",
+      detail: "公告已发生，重点核对市场是否已经反应以及后续验证条件",
+      source: state.announcements?.source || "公开公告",
+      sourceUrl: item.url,
+      manual: false
+    }));
+}
+
+function allCatalysts() {
+  const codes = new Set(catalystCodes());
+  return mergeCatalysts(
+    state.manualCatalysts,
+    (state.catalystSnapshot?.events || []).filter((item) => !item.code || codes.has(item.code)),
+    announcementCatalysts()
+  );
+}
+
+async function loadCatalysts({ force = false } = {}) {
+  if (state.catalystsLoading) return;
+  const codes = catalystCodes();
+  const codesKey = [...codes].sort().join(",");
+  if (state.catalystSnapshot && state.catalystCodesKey === codesKey && !freshness(state.catalystSnapshot.asOf, 24 * 60).stale && !force) {
+    renderTradingWorkspace();
+    return;
+  }
+  state.catalystsLoading = true;
+  state.catalystsError = "";
+  renderCatalystCalendar();
+  try {
+    state.catalystSnapshot = await window.hengce.catalysts(codes, { force });
+    state.catalystCodesKey = codesKey;
+    writeJSON("hengce.catalysts.snapshot.v1", state.catalystSnapshot);
+  } catch (error) {
+    state.catalystsError = friendlyMarketError(error);
+  } finally {
+    state.catalystsLoading = false;
+    renderTradingWorkspace();
+  }
+}
+
+function catalystDateParts(value) {
+  const date = new Date(`${String(value).slice(0, 10)}T00:00:00+08:00`);
+  if (Number.isNaN(date.getTime())) return { day: "--", month: "日期" };
+  return {
+    day: String(date.getDate()).padStart(2, "0"),
+    month: `${date.getMonth() + 1}月`
+  };
+}
+
+function renderCatalystCalendar() {
+  const loading = $("#catalyst-loading");
+  if (!loading) return;
+  loading.classList.toggle("hidden", !state.catalystsLoading);
+  $("#refresh-catalysts").disabled = state.catalystsLoading;
+  const error = $("#catalyst-error");
+  error.textContent = state.catalystsError;
+  error.classList.toggle("hidden", !state.catalystsError);
+  const now = new Date();
+  const events = allCatalysts().filter((item) => {
+    const days = (Date.parse(item.scheduledAt) - now.getTime()) / 86400000;
+    return Number.isFinite(days) && days >= -14 && days <= 180;
+  }).slice(0, 30);
+  $("#catalyst-calendar").innerHTML = events.length
+    ? events.map((item) => {
+        const date = catalystDateParts(item.scheduledAt);
+        const days = Math.ceil((Date.parse(item.scheduledAt) - now.getTime()) / 86400000);
+        const when = days === 0 ? "今天" : days > 0 ? `${days}天后` : `${Math.abs(days)}天前`;
+        return `
+          <div class="catalyst-event">
+            <div class="catalyst-date"><strong>${date.day}</strong><span>${date.month}</span></div>
+            <div class="catalyst-copy">
+              <strong>${escapeHTML(item.name || item.code || "市场事件")} · ${escapeHTML(item.title)}</strong>
+              <span>${escapeHTML(when)} · ${escapeHTML(item.source)}</span>
+              <small>${escapeHTML(item.detail || "临近日期时重新核对公开信息")}</small>
+            </div>
+            <div>
+              <span class="catalyst-kind ${escapeHTML(item.impact)}">${escapeHTML(item.typeLabel)}</span>
+              <div class="table-actions">
+                ${item.sourceUrl ? `<button class="table-action open-catalyst" data-url="${escapeHTML(item.sourceUrl)}" title="查看来源"><i data-lucide="external-link"></i></button>` : ""}
+                ${item.manual ? `<button class="table-action delete-catalyst" data-id="${escapeHTML(item.id)}" title="删除手工事件"><i data-lucide="trash-2"></i></button>` : ""}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("")
+    : '<div class="empty-state compact"><strong>未来180天暂无已记录事件</strong><span>可手工记录重要会议或等待公开披露日历更新</span></div>';
+  $("#catalyst-note").textContent = state.catalystSnapshot?.note || "日期来自公开披露和本机记录，预约日期可能调整。";
+  $$(".open-catalyst").forEach((button) => button.addEventListener("click", () => window.hengce.openExternal(button.dataset.url)));
+  $$(".delete-catalyst").forEach((button) => button.addEventListener("click", () => {
+    state.manualCatalysts = state.manualCatalysts.filter((item) => item.id !== button.dataset.id);
+    persistTradingState();
+    renderTradingWorkspace();
+    showToast("手工事件已删除");
+  }));
+  refreshIcons();
+}
+
+function currentPlanDraft() {
+  if (!state.quote || !state.analysis) return null;
+  const observationPlan = buildObservationPlan({
+    quote: state.quote,
+    model: state.analysis,
+    valuation: state.valuation,
+    settings: state.settings
+  });
+  return buildPlanDraft({
+    quote: state.quote,
+    model: state.analysis,
+    observationPlan,
+    valuation: state.valuation,
+    settings: state.settings,
+    industry: state.companyProfile?.industry || state.valuation?.industry?.name || "未分类"
+  });
+}
+
+function activePlanForCode(code = state.code) {
+  return state.tradePlans.find((item) => item.code === code && item.status === "active") || null;
+}
+
+function openPlanDialog(planValue = null) {
+  const plan = normalizePlan(planValue) || currentPlanDraft();
+  if (!plan) {
+    showToast("当前数据还不能形成有效交易计划");
+    return;
+  }
+  const form = $("#plan-form");
+  form.reset();
+  ["id", "code", "name", "industry", "entryLow", "entryHigh", "stop", "target", "shares", "expiresAt", "trigger", "reason"].forEach((key) => {
+    if (form.elements[key]) form.elements[key].value = plan[key] ?? "";
+  });
+  $("#plan-dialog").showModal();
+  form.elements.entryLow.focus();
+}
+
+function renderPretradeGate() {
+  const container = $("#pretrade-gate");
+  if (!container) return;
+  const plan = activePlanForCode() || currentPlanDraft();
+  $("#pretrade-symbol").textContent = state.quote
+    ? `${state.quote.name} ${state.quote.code}${activePlanForCode() ? " · 已保存计划" : " · 尚未保存"}`
+    : "等待量化看板当前股票";
+  if (!plan) {
+    container.innerHTML = `<div class="empty-state compact"><strong>尚未形成可执行计划</strong><span>${state.analysis ? "当前量价结构未形成有效观察区，继续等待并核对风险线" : "先在量化看板完成行情和估值分析"}</span></div>`;
+    $("#saved-trade-plans").innerHTML = "";
+    return;
+  }
+  const gate = evaluateTradePlan(plan, {
+    quote: state.quote,
+    analysis: state.analysis,
+    breadth: state.breadth,
+    catalysts: allCatalysts(),
+    portfolioRisk: state.portfolioRisk,
+    settings: state.settings
+  });
+  container.innerHTML = `
+    <div class="pretrade-hero">
+      <div class="pretrade-verdict ${gate.status}"><span>计划检查</span><strong>${escapeHTML(gate.label)}</strong><small>${gate.failed} 项阻断 · ${gate.warnings} 项待确认</small></div>
+      <div class="pretrade-figures">
+        <div><span>入场区</span><strong>${number(plan.entryLow)}–${number(plan.entryHigh)}</strong></div>
+        <div><span>止损</span><strong>${number(plan.stop)}</strong></div>
+        <div><span>目标</span><strong>${number(plan.target)}</strong></div>
+        <div><span>盈亏比</span><strong>${Number.isFinite(plan.rewardRisk) ? `${number(plan.rewardRisk)} : 1` : "--"}</strong></div>
+      </div>
+    </div>
+    <div class="pretrade-checks">
+      ${gate.checks.map((item) => `<div class="pretrade-check ${item.status}"><i></i><div><strong>${escapeHTML(item.label)}</strong><small>${escapeHTML(item.detail)}</small></div></div>`).join("")}
+    </div>
+  `;
+  const plans = state.tradePlans.filter((item) => item.status === "active").slice(0, 6);
+  $("#saved-trade-plans").innerHTML = plans.length
+    ? plans.map((item) => `
+        <div class="saved-plan-row">
+          <div><strong>${escapeHTML(item.name)} · ${number(item.entryLow)}–${number(item.entryHigh)}</strong><small>止损 ${number(item.stop)} · 目标 ${number(item.target)} · 有效至 ${escapeHTML(item.expiresAt.slice(0, 10))}</small></div>
+          <div class="table-actions">
+            <button class="table-action trade-plan-execute" data-id="${escapeHTML(item.id)}" title="按计划记录交易"><i data-lucide="notebook-pen"></i></button>
+            <button class="table-action edit-trade-plan" data-id="${escapeHTML(item.id)}" title="编辑计划"><i data-lucide="pencil"></i></button>
+            <button class="table-action cancel-trade-plan" data-id="${escapeHTML(item.id)}" title="取消计划"><i data-lucide="x"></i></button>
+          </div>
+        </div>
+      `).join("")
+    : '<span class="muted">没有已保存的活动计划</span>';
+  $$(".edit-trade-plan").forEach((button) => button.addEventListener("click", () => openPlanDialog(state.tradePlans.find((item) => item.id === button.dataset.id))));
+  $$(".cancel-trade-plan").forEach((button) => button.addEventListener("click", () => {
+    state.tradePlans = state.tradePlans.map((item) => item.id === button.dataset.id ? { ...item, status: "cancelled" } : item);
+    persistTradingState();
+    renderTradingWorkspace();
+    showToast("交易计划已取消");
+  }));
+  $$(".trade-plan-execute").forEach((button) => {
+    button.addEventListener("click", () => {
+      const saved = state.tradePlans.find((item) => item.id === button.dataset.id);
+      if (saved) openTradeDialog({ code: saved.code, name: saved.name, price: saved.referenceEntry, shares: saved.shares, strategy: "回踩计划", reason: saved.reason, planId: saved.id });
+    });
+  });
+  refreshIcons();
+}
+
+function reviewBreakdownRows(rows, empty = "等待完成交易") {
+  return rows.length
+    ? rows.slice(0, 6).map((item) => `
+        <div class="review-breakdown-row">
+          <span>${escapeHTML(item.key)} · ${item.count} 笔 · 胜率 ${item.winRate == null ? "--" : plainPercent(item.winRate, true)}</span>
+          <strong class="${directionClass(item.pnl)}">${compactMoney(item.pnl)}</strong>
+        </div>
+      `).join("")
+    : `<span class="muted">${escapeHTML(empty)}</span>`;
+}
+
+function renderTradeJournal() {
+  const review = buildTradeReview(state.tradeJournal);
+  const summary = review.summary;
+  $("#trade-review-metrics").innerHTML = [
+    ["真实已实现盈亏", compactMoney(summary.totalRealizedPnl), `${summary.completedCount} 笔卖出`, directionClass(summary.totalRealizedPnl)],
+    ["胜率", summary.winRate == null ? "--" : plainPercent(summary.winRate, true), "只统计可计算卖出"],
+    ["盈亏比", summary.payoffRatio == null ? "--" : number(summary.payoffRatio), "平均盈利 / 平均亏损"],
+    ["平均持有", summary.averageHoldingDays == null ? "--" : `${number(summary.averageHoldingDays, 1)} 天`, "未知成本仓位不强算"],
+    ["累计费用", compactMoney(summary.fees), `成交额 ${compactMoney(summary.turnover)}`],
+    ["待复盘", `${summary.unreviewedCount} 笔`, "补充结果与错误标签"]
+  ].map(([label, value, detail, className = ""]) => `<div><span>${escapeHTML(label)}</span><strong class="${className}">${escapeHTML(value)}</strong><small>${escapeHTML(detail)}</small></div>`).join("");
+  $("#review-by-strategy").innerHTML = reviewBreakdownRows(review.byStrategy);
+  $("#review-by-industry").innerHTML = reviewBreakdownRows(review.byIndustry);
+  $("#review-by-period").innerHTML = reviewBreakdownRows(review.byHoldingPeriod);
+  $("#review-by-mistake").innerHTML = reviewBreakdownRows(review.byMistake, "暂无已标记错误");
+  $("#trade-journal-count").textContent = `${review.trades.length} 笔 · 真实记录`;
+  $("#trade-journal-body").innerHTML = review.trades.length
+    ? review.trades.map((item) => `
+        <tr>
+          <td>${escapeHTML(item.tradeAt.slice(0, 10))}</td>
+          <td><div class="stock-cell"><strong>${escapeHTML(item.name)}</strong><span>${escapeHTML(item.code)} · ${escapeHTML(item.industry)}</span></div></td>
+          <td><span class="trade-side ${item.side}">${escapeHTML(item.sideLabel)}</span></td>
+          <td>${number(item.price, 3)}<small>${item.shares.toLocaleString("zh-CN")} 股 · ${compactMoney(item.amount)}</small></td>
+          <td>${compactMoney(item.fees)}</td>
+          <td><div class="trade-reason"><strong>${escapeHTML(item.strategy)}</strong><small title="${escapeHTML([item.reason, item.review].filter(Boolean).join(" · "))}">${escapeHTML(item.reason || "未填写交易理由")}${item.review ? ` · 复盘：${escapeHTML(item.review)}` : ""}${item.mistakeTags.length ? ` · ${item.mistakeTags.map(escapeHTML).join("/")}` : ""}</small></div></td>
+          <td class="${item.side === "sell" ? directionClass(item.realizedPnl) : ""}">${item.side !== "sell" || item.realizedPnl == null ? "--" : compactMoney(item.realizedPnl)}<small>${item.side !== "sell" || item.holdingDays == null ? "" : `持有 ${number(item.holdingDays, 0)} 天`}</small></td>
+          <td><div class="table-actions"><button class="table-action review-trade-record" data-id="${escapeHTML(item.id)}" title="补充复盘"><i data-lucide="message-square-pen"></i></button><button class="table-action delete-trade-record" data-id="${escapeHTML(item.id)}" title="删除流水（不回滚持仓）"><i data-lucide="trash-2"></i></button></div></td>
+        </tr>
+      `).join("")
+    : '<tr><td colspan="8" class="muted">还没有真实成交记录；这里不会混入回测或模拟收益</td></tr>';
+  $$(".delete-trade-record").forEach((button) => button.addEventListener("click", () => {
+    if (!confirm("只删除这条交易流水，不回滚持仓数量和成本。确定继续吗？")) return;
+    state.tradeJournal = state.tradeJournal.filter((item) => item.id !== button.dataset.id);
+    persistTradingState();
+    renderTradingWorkspace();
+    showToast("交易流水已删除，持仓未被修改");
+  }));
+  $$(".review-trade-record").forEach((button) => button.addEventListener("click", () => {
+    const trade = state.tradeJournal.find((item) => item.id === button.dataset.id);
+    if (!trade) return;
+    const review = prompt("补充这笔交易的复盘结论：", trade.review || "");
+    if (review == null) return;
+    const tags = prompt("错误标签（可用逗号分隔，没有可留空）：", (trade.mistakeTags || []).join("，"));
+    if (tags == null) return;
+    state.tradeJournal = state.tradeJournal.map((item) => item.id === trade.id
+      ? normalizeTrade({ ...item, review, mistakeTags: tags })
+      : item
+    ).filter(Boolean);
+    persistTradingState();
+    renderTradingWorkspace();
+    showToast("交易复盘已更新");
+  }));
+  refreshIcons();
+}
+
+function signalOutcomeCell(item, horizon) {
+  const outcome = item.outcomes?.[horizon];
+  if (!Number.isFinite(outcome?.netReturn)) return '<span class="muted">跟踪中</span>';
+  return `<span class="signal-outcome ${directionClass(outcome.netReturn)}">${percent(outcome.netReturn, true)}<small>超额 ${outcome.excessReturn == null ? "--" : percent(outcome.excessReturn, true)}</small></span>`;
+}
+
+function renderSignalJournal() {
+  const summary = summarizeSignals(state.signalJournal, 5);
+  $("#signal-review-summary").innerHTML = [
+    ["已冻结信号", `${summary.total} 条`, "保留发生时价格与评分"],
+    ["5日已完成", `${summary.settled} 条`, `${summary.tracking} 条仍跟踪`],
+    ["5日胜率", summary.hitRate == null ? "--" : plainPercent(summary.hitRate, true), "净收益为正"],
+    ["5日平均净收益", summary.averageReturn == null ? "--" : percent(summary.averageReturn, true), "已计交易成本", directionClass(summary.averageReturn)],
+    ["5日平均超额", summary.averageExcessReturn == null ? "--" : percent(summary.averageExcessReturn, true), "相对沪深对应指数", directionClass(summary.averageExcessReturn)],
+    ["主要来源", summary.bySource[0]?.source || "--", summary.bySource[0] ? `${summary.bySource[0].count} 条完成` : "等待样本"]
+  ].map(([label, value, detail, className = ""]) => `<div><span>${escapeHTML(label)}</span><strong class="${className}">${escapeHTML(value)}</strong><small>${escapeHTML(detail)}</small></div>`).join("");
+  $("#signal-journal-body").innerHTML = state.signalJournal.length
+    ? state.signalJournal.slice(0, 80).map((item) => `
+        <tr>
+          <td>${escapeHTML(String(item.signalAt || "").slice(0, 10))}</td>
+          <td><div class="stock-cell"><strong>${escapeHTML(item.source || "量化分析")} · ${escapeHTML(item.name || item.code)}</strong><span>${escapeHTML(item.code)} · 信号价 ${number(item.price)}</span></div></td>
+          <td>${Number.isFinite(Number(item.score)) ? number(item.score, 0) : "--"}</td>
+          <td>${signalOutcomeCell(item, 1)}</td>
+          <td>${signalOutcomeCell(item, 3)}</td>
+          <td>${signalOutcomeCell(item, 5)}</td>
+          <td>${signalOutcomeCell(item, 10)}</td>
+          <td><span class="risk-pill risk-${item.status === "complete" ? "low" : "medium"}">${item.status === "complete" ? "已完成" : "跟踪中"}</span></td>
+        </tr>
+      `).join("")
+    : '<tr><td colspan="8" class="muted">刷新 A股优选或保存交易计划后，将自动冻结真实信号</td></tr>';
+  $("#refresh-signal-journal").disabled = state.signalJournalSettling;
+  $("#refresh-signal-journal").textContent = state.signalJournalSettling ? "更新中…" : "更新结果";
+}
+
+function captureRecommendationSignals(snapshot) {
+  const dataFreshness = freshness(snapshot?.asOf, 30);
+  if (!snapshot || dataFreshness.stale) return;
+  state.signalJournal = captureSignals(
+    state.signalJournal,
+    (snapshot.recommendations || []).slice(0, 5).map((item) => ({
+      code: item.code,
+      name: item.name,
+      industry: item.industry,
+      price: item.price,
+      score: item.score,
+      riskLine: item.riskLine
+    })),
+    { source: "A股优选", asOf: snapshot.asOf }
+  );
+  persistTradingState();
+}
+
+function captureCurrentPlanSignal(plan) {
+  if (!plan || !state.quote) return;
+  state.signalJournal = captureSignals(state.signalJournal, [{
+    code: plan.code,
+    name: plan.name,
+    industry: plan.industry,
+    price: state.quote.price,
+    score: state.analysis?.score,
+    riskLine: plan.stop
+  }], { source: "交易计划", asOf: new Date().toISOString() });
+  persistTradingState();
+}
+
+async function settleSignalJournal({ force = false } = {}) {
+  if (state.signalJournalSettling || !state.signalJournal.length) return;
+  state.signalJournalSettling = true;
+  renderSignalJournal();
+  const pending = state.signalJournal.filter((item) => item.status !== "complete").slice(0, 16);
+  const histories = new Map();
+  const historyFor = (code) => {
+    if (!histories.has(code)) histories.set(code, window.hengce.klines(code, 260, { force }));
+    return histories.get(code);
+  };
+  const benchmarks = new Map();
+  const benchmarkFor = (benchmark) => {
+    const key = benchmark === "shanghai" ? "shanghai" : "shenzhen";
+    if (!benchmarks.has(key)) benchmarks.set(key, window.hengce.indexKlines(key, 260, { force }));
+    return benchmarks.get(key);
+  };
+  const settled = await Promise.allSettled(pending.map(async (item) => {
+    const [bars, benchmark] = await Promise.all([historyFor(item.code), benchmarkFor(item.benchmark || (/^6/.test(item.code) ? "shanghai" : "shenzhen"))]);
+    return settleSignal(item, bars, benchmark, state.settings);
+  }));
+  const updates = new Map();
+  settled.forEach((result) => {
+    if (result.status === "fulfilled" && result.value) updates.set(result.value.id, result.value);
+  });
+  state.signalJournal = state.signalJournal.map((item) => updates.get(item.id) || item);
+  state.signalJournalSettling = false;
+  persistTradingState();
+  renderTradingWorkspace();
+  if (force) showToast(updates.size ? `已更新 ${updates.size} 条前向信号` : "暂时没有新的交易日结果");
+}
+
+function renderActionCenter() {
+  const actions = buildActionCenter({
+    plans: state.tradePlans,
+    catalysts: allCatalysts(),
+    signals: state.signalJournal,
+    portfolioRisk: state.portfolioRisk
+  });
+  $("#action-center-count").textContent = actions.length ? `${actions.length} 项` : "暂无紧急项";
+  $("#action-center-list").innerHTML = actions.length
+    ? actions.map((item) => `<article class="action-center-item ${escapeHTML(item.tone)}"><span>${escapeHTML(item.kind)}</span><strong>${escapeHTML(item.title)}</strong><small>${escapeHTML(item.detail)}</small></article>`).join("")
+    : '<article class="action-center-item positive"><span>今日状态</span><strong>暂无必须处理事项</strong><small>仍需按计划核对行情、公告和风险线</small></article>';
+  const dashboardAction = $("#dashboard-action-center");
+  dashboardAction.classList.toggle("hidden", !actions.length);
+  if (actions.length) {
+    $("#dashboard-action-title").textContent = `今日 ${actions.length} 项需要核对 · ${actions[0].kind}`;
+    $("#dashboard-action-detail").textContent = `${actions[0].title} · ${actions[0].detail}`;
+  }
+}
+
+function renderTradingWorkspace() {
+  if (!$("#trading-view")) return;
+  renderActionCenter();
+  renderPretradeGate();
+  renderCatalystCalendar();
+  renderTradeJournal();
+  renderSignalJournal();
+}
+
+function recordId(prefix) {
+  return `${prefix}-${typeof window.crypto?.randomUUID === "function" ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
+}
+
+function openTradeDialog(prefill = {}) {
+  const form = $("#trade-form");
+  form.reset();
+  const holding = state.holdings.find((item) => item.code === (prefill.code || state.code));
+  const values = {
+    planId: prefill.planId || "",
+    code: prefill.code || state.quote?.code || state.code,
+    name: prefill.name || state.quote?.name || holding?.name || "",
+    side: prefill.side || "buy",
+    tradeAt: prefill.tradeAt || todayKey(),
+    price: Number.isFinite(Number(prefill.price || state.quote?.price || holding?.cost))
+      ? Number(prefill.price || state.quote?.price || holding?.cost).toFixed(3)
+      : "",
+    shares: prefill.shares || 100,
+    strategy: prefill.strategy || "手工判断",
+    reason: prefill.reason || "",
+    mistakeTags: prefill.mistakeTags || ""
+  };
+  Object.entries(values).forEach(([key, value]) => {
+    if (form.elements[key]) form.elements[key].value = value;
+  });
+  form.elements.syncHolding.checked = true;
+  form.elements.fees.value = estimateFees(values, state.settings);
+  $("#trade-dialog").showModal();
+  form.elements.side.focus();
+}
+
+function refreshTradeFeeEstimate() {
+  const form = $("#trade-form");
+  form.elements.fees.value = estimateFees({
+    side: form.elements.side.value,
+    price: Number(form.elements.price.value),
+    shares: Number(form.elements.shares.value)
+  }, state.settings);
+}
+
+function openCatalystDialog() {
+  const form = $("#catalyst-form");
+  form.reset();
+  form.elements.code.value = state.quote?.code || "";
+  form.elements.name.value = state.quote?.name || "";
+  form.elements.scheduledAt.value = todayKey();
+  $("#catalyst-dialog").showModal();
+  form.elements.type.focus();
+}
+
+function saveTradeFromForm(form) {
+  const code = normalizeCode(form.elements.code.value);
+  const holding = state.holdings.find((item) => item.code === code);
+  const raw = {
+    id: recordId("trade"),
+    planId: form.elements.planId.value,
+    code,
+    name: form.elements.name.value,
+    industry: state.profiles.get(code)?.industry || holding?.industry || (state.code === code ? state.companyProfile?.industry || state.valuation?.industry?.name : "") || "未分类",
+    side: form.elements.side.value,
+    tradeAt: form.elements.tradeAt.value,
+    price: Number(form.elements.price.value),
+    shares: Number(form.elements.shares.value),
+    fees: Number(form.elements.fees.value),
+    strategy: form.elements.strategy.value,
+    reason: form.elements.reason.value,
+    mistakeTags: form.elements.mistakeTags.value,
+    createdAt: new Date().toISOString()
+  };
+  let trade = normalizeTrade(raw);
+  if (!trade) {
+    showToast("请检查交易日期、股票、方向、价格和股数");
+    return false;
+  }
+  const applied = applyTradeToHoldings(state.holdings, trade);
+  if (form.elements.syncHolding.checked) {
+    if (!applied.ok) {
+      showToast(applied.reason);
+      return false;
+    }
+    state.holdings = applied.holdings;
+    trade = applied.trade;
+    writeJSON("hengce.holdings.v2", state.holdings);
+  } else if (applied.ok) {
+    trade = applied.trade;
+  }
+  state.tradeJournal = [trade, ...state.tradeJournal].slice(0, 800);
+  if (trade.planId) {
+    state.tradePlans = state.tradePlans.map((item) => item.id === trade.planId ? { ...item, status: "executed" } : item);
+  }
+  persistTradingState();
+  $("#trade-dialog").close();
+  renderHoldings();
+  renderDashboard();
+  renderTradingWorkspace();
+  if (state.activeView === "trading") loadCatalysts();
+  if (form.elements.syncHolding.checked) updateHoldingQuotes();
+  showToast(`真实${trade.sideLabel}已记录${form.elements.syncHolding.checked ? "并同步持仓" : ""}`);
+  return true;
+}
+
+function savePlanFromForm(form) {
+  const existing = state.tradePlans.find((item) => item.id === form.elements.id.value);
+  const plan = normalizePlan({
+    id: form.elements.id.value || recordId("plan"),
+    code: form.elements.code.value,
+    name: form.elements.name.value,
+    industry: form.elements.industry.value,
+    createdAt: existing?.createdAt || new Date().toISOString(),
+    entryLow: Number(form.elements.entryLow.value),
+    entryHigh: Number(form.elements.entryHigh.value),
+    stop: Number(form.elements.stop.value),
+    target: Number(form.elements.target.value),
+    shares: Number(form.elements.shares.value || 0),
+    expiresAt: form.elements.expiresAt.value,
+    trigger: form.elements.trigger.value,
+    reason: form.elements.reason.value,
+    status: "active",
+    source: existing?.source || "量化看板"
+  });
+  if (!plan) {
+    showToast("请检查入场区、止损、目标与有效期");
+    return false;
+  }
+  state.tradePlans = [plan, ...state.tradePlans.filter((item) => item.id !== plan.id)].slice(0, 120);
+  captureCurrentPlanSignal(plan);
+  persistTradingState();
+  $("#plan-dialog").close();
+  renderTradingWorkspace();
+  if (state.activeView === "trading") loadCatalysts();
+  showToast(`${plan.name} 的交易计划已保存在本机`);
+  return true;
+}
+
+function saveCatalystFromForm(form) {
+  const typeLabels = {
+    earnings: "财报业绩",
+    unlock: "解禁减持",
+    dividend: "分红除权",
+    macro: "宏观会议",
+    operation: "经营事项",
+    other: "其他事件"
+  };
+  const event = normalizeCatalyst({
+    id: recordId("event"),
+    code: form.elements.code.value,
+    name: form.elements.name.value,
+    type: form.elements.type.value,
+    typeLabel: typeLabels[form.elements.type.value],
+    scheduledAt: form.elements.scheduledAt.value,
+    impact: form.elements.impact.value,
+    title: form.elements.title.value,
+    detail: form.elements.detail.value,
+    source: "本人记录",
+    manual: true,
+    createdAt: new Date().toISOString()
+  });
+  if (!event) {
+    showToast("请填写有效的事件日期和标题");
+    return false;
+  }
+  state.manualCatalysts = [event, ...state.manualCatalysts].slice(0, 200);
+  persistTradingState();
+  $("#catalyst-dialog").close();
+  renderTradingWorkspace();
+  showToast("催化事件已保存在本机");
+  return true;
+}
+
 function populateSettings() {
   const form = $("#settings-form");
   Object.entries(state.settings).forEach(([key, value]) => {
@@ -4128,6 +4909,17 @@ function dataHealthSources() {
       detail: state.companyProfileError || state.valuation?.reason || "公司画像、财务与行业"
     },
     {
+      key: "catalysts",
+      label: "催化剂日历",
+      loaded: Boolean(state.catalystSnapshot || state.catalystsError),
+      available: Boolean(state.catalystSnapshot),
+      partial: Boolean(state.catalystSnapshot?.sourceStatus?.partial),
+      asOf: state.catalystSnapshot?.asOf,
+      staleAfterMinutes: 24 * 60,
+      source: "公开财报预约 / 解禁 / 分红日历",
+      detail: state.catalystsError || `${state.catalystSnapshot?.events?.length || 0} 项公开事件`
+    },
+    {
       key: "hotspots",
       label: "热点与板块",
       loaded: Boolean(state.hotspots || state.hotspotsError),
@@ -4168,7 +4960,7 @@ function dataHealthSources() {
       partial: Boolean(state.compass?.sourceStatus?.partial),
       asOf: state.compass?.asOf,
       staleAfterMinutes: 30,
-      source: "腾讯指数优先 / 东方财富降级",
+      source: "腾讯美港 / 东方财富日韩台与半导体链",
       detail: state.compassError || state.compass?.regime?.label || "全球与A股指数"
     },
     {
@@ -4466,8 +5258,10 @@ async function buildAiFacts(code, { force = false } = {}) {
           asOf: compass.asOf,
           regime: compass.regime,
           signals: compass.signals,
-          domestic: compass.domestic,
-          global: compass.global
+          domesticMarkets: compass.domesticMarkets,
+          globalMarkets: compass.globalMarkets,
+          semiconductorMarkets: compass.semiconductorMarkets,
+          semiconductorPulse: compass.semiconductorPulse
         })
       : null,
     observationPlan: compactAiFacts(observationPlan),
@@ -4763,6 +5557,51 @@ async function removeAiKey() {
   }
 }
 
+async function saveLocalBackupFile() {
+  const status = $("#backup-status");
+  const password = $("#backup-password").value;
+  status.textContent = "正在导出";
+  try {
+    const payload = collectBackup(localStorage);
+    if (!Object.keys(payload.entries).length) {
+      status.textContent = "暂无可备份数据";
+      showToast("尚未产生持仓、交易或个人设置记录");
+      return;
+    }
+    const result = await window.hengce.saveBackup(payload, password);
+    if (result.canceled) {
+      status.textContent = "已取消";
+      return;
+    }
+    status.textContent = result.encrypted ? "加密备份完成" : "备份完成";
+    $("#backup-password").value = "";
+    showToast(`${result.fileName} 已保存${result.encrypted ? "并加密" : ""}`);
+  } catch (error) {
+    status.textContent = "导出失败";
+    showToast(String(error?.message || error).replace(/^Error invoking remote method '[^']+': Error:\s*/, ""));
+  }
+}
+
+async function restoreLocalBackupFile() {
+  if (!confirm("恢复会覆盖衡策当前的持仓、交易流水、计划和个人设置。确定继续吗？")) return;
+  const status = $("#backup-status");
+  status.textContent = "正在读取";
+  try {
+    const result = await window.hengce.openBackup($("#backup-password").value);
+    if (result.canceled) {
+      status.textContent = "已取消";
+      return;
+    }
+    const restored = restoreBackup(localStorage, result.payload);
+    status.textContent = `已恢复 ${restored.restoredKeys.length} 项`;
+    showToast("本地数据恢复完成，正在重新载入");
+    setTimeout(() => window.location.reload(), 500);
+  } catch (error) {
+    status.textContent = "恢复失败";
+    showToast(String(error?.message || error).replace(/^Error invoking remote method '[^']+': Error:\s*/, ""));
+  }
+}
+
 function fileSize(value) {
   const bytes = Number(value || 0);
   if (!bytes) return "--";
@@ -4787,6 +5626,7 @@ function renderUpdate() {
   $("#update-status").textContent = state.updateMessage;
   $("#check-update").disabled = state.updateChecking || state.updateDownloading;
   $("#check-update").textContent = state.updateChecking ? "检查中…" : "检查更新";
+  $("#open-update-page").classList.toggle("hidden", !state.updateError && !(info && (!info.supported || info.degraded)));
   $("#download-update").classList.toggle(
     "hidden",
     !info?.available || state.updateDownloaded
@@ -4815,6 +5655,7 @@ function renderUpdate() {
 async function checkForUpdates({ silent = false } = {}) {
   if (state.updateChecking || state.updateDownloading) return;
   state.updateChecking = true;
+  state.updateError = "";
   if (!silent) state.updateMessage = "正在连接 GitHub 检查正式版本…";
   renderUpdate();
   try {
@@ -4822,13 +5663,20 @@ async function checkForUpdates({ silent = false } = {}) {
     if (!state.updateInfo.supported) {
       state.updateMessage = "当前系统架构暂不支持应用内下载，请前往 Release 页面更新。";
     } else if (state.updateInfo.available) {
-      state.updateMessage = `发现新版 ${state.updateInfo.latestVersion}，安装包将先校验 SHA-256。`;
+      state.updateMessage = `${state.updateInfo.notice ? `${state.updateInfo.notice} · ` : ""}发现新版 ${state.updateInfo.latestVersion}，安装包将先校验 SHA-256。`;
       if (silent) showToast(`发现衡策 ${state.updateInfo.latestVersion} 新版本`);
+    } else if (state.updateInfo.currentAhead) {
+      state.updateMessage = "当前是高于公开正式版的本地测试构建。";
+    } else if (state.updateInfo.degraded) {
+      state.updateMessage = state.updateInfo.source === "local-cache"
+        ? `${state.updateInfo.notice}，未能实时确认是否存在更新。`
+        : `${state.updateInfo.notice}；当前版本与 latest 标签一致。`;
     } else {
       state.updateMessage = "当前已经是最新正式版本。";
     }
   } catch (error) {
-    state.updateMessage = `检查更新失败：${friendlyMarketError(error)}`;
+    state.updateError = friendlyUpdateError(error);
+    state.updateMessage = `检查更新失败：${state.updateError}`;
   } finally {
     state.updateChecking = false;
     renderUpdate();
@@ -4846,7 +5694,8 @@ async function downloadUpdate() {
     state.updateDownloaded = true;
     state.updateMessage = "下载与 SHA-256 校验完成，可以打开安装包。";
   } catch (error) {
-    state.updateMessage = `下载失败：${friendlyMarketError(error)}`;
+    state.updateError = friendlyUpdateError(error);
+    state.updateMessage = `下载失败：${state.updateError}`;
   } finally {
     state.updateDownloading = false;
     renderUpdate();
@@ -4863,7 +5712,8 @@ async function installUpdate() {
       : "新版安装映像已打开，请按系统提示完成替换。";
     renderUpdate();
   } catch (error) {
-    state.updateMessage = `无法打开安装包：${friendlyMarketError(error)}`;
+    state.updateError = friendlyUpdateError(error);
+    state.updateMessage = `无法打开安装包：${state.updateError}`;
     renderUpdate();
   }
 }
@@ -4892,6 +5742,13 @@ function switchView(view) {
     settleOvernightForwardJournal();
   }
   if (view === "watchlist") loadWatchlist();
+  if (view === "trading") {
+    renderTradingWorkspace();
+    loadCatalysts();
+    if (!state.breadth && !state.breadthLoading) loadBreadth();
+    if (state.holdings.length && !state.portfolioRiskLoading) updateHoldingQuotes();
+    settleSignalJournal();
+  }
   if (view === "ai") {
     renderAiPage();
     if (!state.aiConfig && !state.aiConfigLoading) loadAiSettings();
@@ -4906,6 +5763,7 @@ function bindEvents() {
     button.addEventListener("click", () => switchView(button.dataset.view))
   );
   $("#analyze-button").addEventListener("click", submitStockSearch);
+  $("#dashboard-action-center").addEventListener("click", () => switchView("trading"));
   $("#refresh-button").addEventListener("click", () => loadMarketData(state.code, { force: true }));
   $("#refresh-hotspots").addEventListener("click", () =>
     loadHotspots({ force: true })
@@ -4960,6 +5818,11 @@ function bindEvents() {
   $("#refresh-watchlist").addEventListener("click", () =>
     loadWatchlist({ force: true })
   );
+  $("#refresh-catalysts").addEventListener("click", () => loadCatalysts({ force: true }));
+  $("#refresh-signal-journal").addEventListener("click", () => settleSignalJournal({ force: true }));
+  $("#add-trade").addEventListener("click", () => openTradeDialog());
+  $("#add-catalyst").addEventListener("click", openCatalystDialog);
+  $("#create-trade-plan").addEventListener("click", () => openPlanDialog(activePlanForCode() || currentPlanDraft()));
   $("#run-ai-tracking").addEventListener("click", generateAiTracking);
   $("#ask-assistant").addEventListener("click", askContextAssistant);
   $("#assistant-question").addEventListener("keydown", (event) => {
@@ -5031,6 +5894,7 @@ function bindEvents() {
       state.chartHoverIndex = null;
       saveUiState();
       renderDashboard();
+      if (state.chartMode === "daily") ensureChartRangeHistory();
     })
   );
   $$("[data-range]").forEach((button) =>
@@ -5041,6 +5905,7 @@ function bindEvents() {
       state.chartHoverIndex = null;
       saveUiState();
       schedulePriceChart();
+      ensureChartRangeHistory();
     })
   );
   $$("[data-strategy]").forEach((button) =>
@@ -5067,8 +5932,13 @@ function bindEvents() {
     showToast("回测参数已恢复默认");
   });
   $("#check-update").addEventListener("click", () => checkForUpdates());
+  $("#open-update-page").addEventListener("click", () =>
+    window.hengce.openExternal(state.updateInfo?.releaseUrl || "https://github.com/GuoyuanSen/HengCe/releases/latest")
+  );
   $("#download-update").addEventListener("click", downloadUpdate);
   $("#install-update").addEventListener("click", installUpdate);
+  $("#save-local-backup").addEventListener("click", saveLocalBackupFile);
+  $("#restore-local-backup").addEventListener("click", restoreLocalBackupFile);
   $("#minimize-to-tray").addEventListener("change", (event) => {
     state.windowPreferences.minimizeToTray = event.currentTarget.checked;
     writeJSON("hengce.windowPreferences.v1", state.windowPreferences);
@@ -5123,6 +5993,15 @@ function bindEvents() {
     renderDefaultStockButton();
   });
   $("#watch-current-stock").addEventListener("click", addCurrentStockToWatchlist);
+  $("#record-current-trade").addEventListener("click", () => openTradeDialog({
+    code: state.quote?.code,
+    name: state.quote?.name,
+    price: state.quote?.price,
+    shares: activePlanForCode()?.shares || 100,
+    strategy: activePlanForCode() ? "回踩计划" : "手工判断",
+    reason: activePlanForCode()?.reason || "",
+    planId: activePlanForCode()?.id || ""
+  }));
   $("#record-current-holding").addEventListener("click", () => {
     if (!state.quote) {
       showToast("等待当前股票行情完成");
@@ -5174,7 +6053,14 @@ function bindEvents() {
       }
     }
     const existing = state.holdings.find((item) => item.code === code);
-    const holding = { code, name, shares: Math.floor(shares), cost, primary: Boolean(existing?.primary) };
+    const holding = {
+      ...(existing || {}),
+      code,
+      name,
+      shares: Math.floor(shares),
+      cost,
+      primary: Boolean(existing?.primary)
+    };
     const index = state.holdings.findIndex((item) => item.code === code);
     if (index >= 0) state.holdings[index] = holding;
     else state.holdings.push(holding);
@@ -5198,6 +6084,25 @@ function bindEvents() {
   holdingStockQuery.addEventListener("blur", () =>
     setTimeout(() => $("#holding-search-results").classList.add("hidden"), 120)
   );
+
+  $("#close-trade-dialog").addEventListener("click", () => $("#trade-dialog").close());
+  $("#close-plan-dialog").addEventListener("click", () => $("#plan-dialog").close());
+  $("#close-catalyst-dialog").addEventListener("click", () => $("#catalyst-dialog").close());
+  $("#trade-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveTradeFromForm(event.currentTarget);
+  });
+  ["side", "price", "shares"].forEach((name) =>
+    $("#trade-form").elements[name].addEventListener("change", refreshTradeFeeEstimate)
+  );
+  $("#plan-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    savePlanFromForm(event.currentTarget);
+  });
+  $("#catalyst-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveCatalystFromForm(event.currentTarget);
+  });
 
   const priceCanvas = $("#price-chart");
   priceCanvas.addEventListener("mousemove", (event) => {
@@ -5272,8 +6177,8 @@ renderHoldings();
 renderWatchlist();
 renderPortfolioRisk();
 renderAiPage();
+renderTradingWorkspace();
 renderTradingCalendarStatus();
-loadTradingCalendar();
 loadAiSettings();
 refreshIcons();
 updateOvernightClock();
@@ -5281,4 +6186,5 @@ setInterval(updateOvernightClock, 1000);
 scheduleOvernightRefresh();
 scheduleIntelligenceRefresh(60000);
 loadInitialMarketData();
-checkForUpdates({ silent: true });
+setTimeout(() => loadTradingCalendar(), 2200);
+setTimeout(() => checkForUpdates({ silent: true }), 4500);

@@ -12,6 +12,7 @@ const main = fs.readFileSync(path.join(root, "electron", "main.js"), "utf8");
 const macro = fs.readFileSync(path.join(root, "electron", "macro.js"), "utf8");
 const intelligenceBackend = fs.readFileSync(path.join(root, "electron", "intelligence.js"), "utf8");
 const breadthBackend = fs.readFileSync(path.join(root, "electron", "breadth.js"), "utf8");
+const compassBackend = fs.readFileSync(path.join(root, "electron", "compass.js"), "utf8");
 
 test("stock code input stays outside the draggable titlebar", () => {
   assert.match(
@@ -57,7 +58,13 @@ test("dashboard restores a local snapshot and lazy-loads full history for backte
   assert.match(renderer, /hengce\.dashboard\.snapshots\.v1/);
   assert.match(renderer, /function restoreDashboardSnapshot/);
   assert.match(renderer, /preserveContent:\s*showingExisting/);
-  assert.match(renderer, /\.klines\(normalized, 300, options\)/);
+  assert.match(renderer, /\.klines\(normalized, 180, options\)/);
+  assert.match(html, /id="dashboard-loading" class="dashboard-skeleton"/);
+  assert.match(renderer, /function renderQuotePreview/);
+  assert.match(renderer, /function mergeDashboardBars/);
+  assert.match(renderer, /报价已返回，正在计算量化结构/);
+  assert.match(renderer, /function ensureChartRangeHistory/);
+  assert.match(renderer, /\.klines\(code, 300, \{ force \}\)/);
   assert.match(renderer, /function ensureBacktestHistory/);
   assert.match(renderer, /\.klines\(code, 1300, \{ force \}\)/);
   assert.match(renderer, /显示最近快照，正在后台刷新/);
@@ -122,6 +129,12 @@ test("market compass is a standalone lazy-loaded global and domestic view", () =
   assert.match(html, /data-view="compass"/);
   assert.match(html, /id="compass-view"/);
   assert.match(html, /id="compass-styles"/);
+  assert.match(html, /id="semiconductor-markets"/);
+  assert.match(html, /美港、日韩与台湾主要市场/);
+  assert.match(compassBackend, /100\.N225/);
+  assert.match(compassBackend, /100\.KS11/);
+  assert.match(compassBackend, /251\.SOX/);
+  assert.match(renderer, /全球半导体链/);
   assert.match(main, /RPT_INDEX_TS_COMPONENT/);
   assert.match(renderer, /style-representatives/);
   assert.match(renderer, /代表成分按公开指数权重或流通规模展示/);
@@ -343,6 +356,65 @@ test("settings expose verified in-app release updates", () => {
   assert.match(main, /shouldQuitAfterOpeningUpdate/);
   assert.match(renderer, /打开 DMG 并退出/);
   assert.match(renderer, /checkForUpdates\(\{ silent: true \}\)/);
+  assert.match(html, /id="open-update-page"/);
+  assert.match(main, /releaseFromRedirect/);
+  assert.match(main, /latest-release\.json/);
+  assert.match(renderer, /function friendlyUpdateError/);
+  assert.match(renderer, /GitHub 版本服务访问频率受限/);
+});
+
+test("v0.7 navigation follows the research-to-execution path", () => {
+  const order = ["dashboard", "hotspots", "recommendations", "intelligence", "compass", "ai", "overnight", "watchlist", "trading", "backtest", "holdings", "settings"];
+  const positions = order.map((view) => html.indexOf(`data-view="${view}"`));
+  assert.equal(positions.every((position) => position >= 0), true);
+  assert.deepEqual([...positions].sort((left, right) => left - right), positions);
+  assert.match(html, /data-view="recommendations"[\s\S]*?>A股优选</);
+  assert.match(html, /data-view="trading"[\s\S]*?>交易复盘</);
+});
+
+test("trading workspace closes the plan, execution and review loop", () => {
+  assert.match(html, /id="trading-view"/);
+  assert.match(html, /id="pretrade-gate"/);
+  assert.match(html, /id="catalyst-calendar"/);
+  assert.match(html, /id="trade-journal-body"/);
+  assert.match(html, /id="signal-journal-body"/);
+  assert.match(html, /src="trade_journal\.js"/);
+  assert.match(html, /src="trading_workspace\.js"/);
+  assert.match(preload, /catalysts:\s*\(codes/);
+  assert.match(main, /ipcMain\.handle\("market:catalysts"/);
+  assert.match(renderer, /applyTradeToHoldings/);
+  assert.match(renderer, /captureRecommendationSignals/);
+  assert.match(renderer, /settleSignalJournal/);
+  assert.match(preload, /indexKlines:\s*\(benchmark/);
+  assert.match(main, /ipcMain\.handle\("market:index-klines"/);
+  assert.match(main, /fetchBenchmarkKLines\("shanghai", 260\)/);
+  assert.match(renderer, /window\.hengce\.indexKlines/);
+});
+
+test("local backup is allowlisted, optionally encrypted and excludes AI keys", () => {
+  assert.match(html, /id="save-local-backup"/);
+  assert.match(html, /不包含 AI API Key/);
+  assert.match(html, /src="local_backup\.js"/);
+  assert.match(preload, /saveBackup:\s*\(payload/);
+  assert.match(preload, /openBackup:\s*\(password/);
+  assert.match(main, /ipcMain\.handle\("system:backup-save"/);
+  assert.match(main, /createBackupEnvelope/);
+  assert.match(renderer, /collectBackup\(localStorage\)/);
+});
+
+test("dashboard starts with intraday mode and defers non-critical startup work", () => {
+  assert.match(renderer, /chartMode:\s*"intraday"/);
+  assert.doesNotMatch(renderer, /chartMode:\s*storedUi\.chartMode/);
+  assert.match(renderer, /setTimeout\(\(\) => loadTradingCalendar\(\), 2200\)/);
+  assert.match(renderer, /setTimeout\(\(\) => checkForUpdates\(\{ silent: true \}\), 4500\)/);
+  assert.match(styles, /\.dashboard-skeleton/);
+});
+
+test("company profile improves long-form reading hierarchy", () => {
+  assert.match(renderer, /function companyProfileParagraphs/);
+  assert.match(renderer, /class="company-profile-full"/);
+  assert.match(styles, /\.company-profile-preview\s*\{[\s\S]*?font-size:\s*15px/);
+  assert.match(styles, /\.company-profile-full\s*\{[\s\S]*?font-size:\s*14px;[\s\S]*?line-height:\s*1\.82/);
 });
 
 test("recommendation rows open analysis without requiring the trailing button", () => {

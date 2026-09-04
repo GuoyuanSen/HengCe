@@ -33,6 +33,39 @@ function shouldQuitAfterOpeningUpdate(platform) {
   return platform === "darwin" || platform === "win32";
 }
 
+function releaseFromLatestUrl(value, repositoryUrl = "https://github.com/GuoyuanSen/HengCe") {
+  const match = String(value || "").match(/\/releases\/tag\/(v?\d+(?:\.\d+){1,3})(?:[/?#]|$)/i);
+  if (!match) return null;
+  const tagName = match[1].startsWith("v") ? match[1] : `v${match[1]}`;
+  const downloadBase = `${repositoryUrl}/releases/download/${tagName}`;
+  const assetNames = [
+    "HengCe-Apple-Silicon.dmg",
+    "HengCe-Apple-Silicon.dmg.sha256",
+    "HengCe-Windows-x64-Setup.exe",
+    "HengCe-Windows-x64-Setup.exe.sha256"
+  ];
+  return {
+    tag_name: tagName,
+    name: `衡策 ${tagName}`,
+    body: "",
+    html_url: `${repositoryUrl}/releases/tag/${tagName}`,
+    published_at: "",
+    draft: false,
+    prerelease: false,
+    assets: assetNames.map((name) => ({
+      name,
+      size: 0,
+      browser_download_url: `${downloadBase}/${name}`
+    }))
+  };
+}
+
+function releaseFromAtom(value, repositoryUrl = "https://github.com/GuoyuanSen/HengCe") {
+  const decoded = String(value || "").replaceAll("&amp;", "&");
+  const match = decoded.match(/https:\/\/github\.com\/GuoyuanSen\/HengCe\/releases\/tag\/v?\d+(?:\.\d+){1,3}/i);
+  return match ? releaseFromLatestUrl(match[0], repositoryUrl) : null;
+}
+
 function buildUpdateModel(release, currentVersion, platform, arch) {
   const assetName = releaseAssetName(platform, arch);
   const latestVersion = String(release?.tag_name || "").replace(/^v/i, "");
@@ -56,6 +89,7 @@ function buildUpdateModel(release, currentVersion, platform, arch) {
     assetSize: Number(asset?.size || 0),
     supported,
     downloadable,
+    currentAhead: comparison === -1,
     available:
       !release?.draft &&
       !release?.prerelease &&
@@ -87,6 +121,8 @@ module.exports = {
   compareVersions,
   parseChecksum,
   publicUpdateModel,
+  releaseFromAtom,
+  releaseFromLatestUrl,
   releaseAssetName,
   shouldQuitAfterOpeningUpdate,
   versionParts

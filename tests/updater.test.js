@@ -4,6 +4,8 @@ const {
   buildUpdateModel,
   compareVersions,
   parseChecksum,
+  releaseFromAtom,
+  releaseFromLatestUrl,
   releaseAssetName,
   shouldQuitAfterOpeningUpdate
 } = require("../electron/updater.js");
@@ -13,6 +15,28 @@ test("compares semantic release versions without string ordering errors", () => 
   assert.equal(compareVersions("0.3.2", "0.3.2"), 0);
   assert.equal(compareVersions("0.3.1", "0.3.2"), -1);
   assert.equal(compareVersions("not-a-version", "0.3.2"), null);
+});
+
+test("reads the latest published tag from the official Atom feed", () => {
+  const release = releaseFromAtom('<?xml version="1.0"?><feed><entry><link rel="alternate" href="https://github.com/GuoyuanSen/HengCe/releases/tag/v0.7.0"/></entry></feed>');
+  assert.equal(release.tag_name, "v0.7.0");
+  assert.equal(releaseFromAtom("<feed></feed>"), null);
+});
+
+test("marks a local test build that is ahead of the latest public release", () => {
+  const release = releaseFromLatestUrl("https://github.com/GuoyuanSen/HengCe/releases/tag/v0.6.0");
+  const model = buildUpdateModel(release, "0.7.0", "darwin", "arm64");
+  assert.equal(model.available, false);
+  assert.equal(model.currentAhead, true);
+});
+
+test("builds a predictable release fallback from GitHub latest redirect", () => {
+  const release = releaseFromLatestUrl("https://github.com/GuoyuanSen/HengCe/releases/tag/v0.7.0");
+  assert.equal(release.tag_name, "v0.7.0");
+  const model = buildUpdateModel(release, "0.6.0", "darwin", "arm64");
+  assert.equal(model.available, true);
+  assert.match(model._checksumUrl, /v0\.7\.0\/HengCe-Apple-Silicon\.dmg\.sha256$/);
+  assert.equal(releaseFromLatestUrl("https://github.com/GuoyuanSen/HengCe/releases"), null);
 });
 
 test("macOS and Windows quit after opening a verified installer", () => {

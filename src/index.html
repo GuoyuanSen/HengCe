@@ -32,6 +32,10 @@
             <i data-lucide="flame"></i>
             <span>每日热点</span>
           </button>
+          <button class="nav-item" data-view="recommendations">
+            <i data-lucide="list-filter"></i>
+            <span>A股优选</span>
+          </button>
           <button class="nav-item" data-view="intelligence">
             <i data-lucide="radio-tower"></i>
             <span>市场情报</span>
@@ -41,9 +45,9 @@
             <i data-lucide="compass"></i>
             <span>市场风向标</span>
           </button>
-          <button class="nav-item" data-view="recommendations">
-            <i data-lucide="list-filter"></i>
-            <span>A股优选</span>
+          <button class="nav-item" data-view="ai">
+            <i data-lucide="sparkles"></i>
+            <span>AI追踪</span>
           </button>
           <button class="nav-item" data-view="overnight">
             <i data-lucide="moon-star"></i>
@@ -55,9 +59,9 @@
             <span>观察提醒</span>
             <span id="watchlist-badge" class="nav-badge hidden">0</span>
           </button>
-          <button class="nav-item" data-view="ai">
-            <i data-lucide="sparkles"></i>
-            <span>AI追踪</span>
+          <button class="nav-item" data-view="trading">
+            <i data-lucide="notebook-tabs"></i>
+            <span>交易复盘</span>
           </button>
           <button class="nav-item" data-view="backtest">
             <i data-lucide="flask-conical"></i>
@@ -135,10 +139,19 @@
           </div>
           <div id="error-banner" class="error-banner hidden"></div>
           <div id="dashboard-data-status" class="data-status-line hidden"></div>
+          <button id="dashboard-action-center" class="dashboard-action-center hidden" type="button">
+            <i data-lucide="circle-alert"></i>
+            <span><strong id="dashboard-action-title">今日需要关注</strong><small id="dashboard-action-detail"></small></span>
+            <em>查看交易复盘</em>
+          </button>
 
-          <div id="dashboard-loading" class="loading-state">
-            <span class="spinner"></span>
-            <p>正在读取行情与历史K线</p>
+          <div id="dashboard-loading" class="dashboard-skeleton" aria-live="polite">
+            <div class="dashboard-skeleton-status"><span class="spinner"></span><p id="dashboard-loading-label">正在读取最新报价</p></div>
+            <div class="skeleton-quote"><span class="skeleton medium"></span><span class="skeleton short"></span></div>
+            <div class="skeleton-metrics">
+              <span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span>
+            </div>
+            <div class="skeleton-panel"><span class="skeleton medium"></span><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div>
           </div>
 
           <div id="dashboard-content" class="hidden">
@@ -205,6 +218,7 @@
               </p>
               <div class="plan-action-row">
                 <button id="watch-current-stock" class="secondary-button"><i data-lucide="bell-plus"></i><span>加入观察提醒</span></button>
+                <button id="record-current-trade" class="secondary-button"><i data-lucide="notebook-pen"></i><span>记录真实交易</span></button>
                 <button id="record-current-holding" class="secondary-button"><i data-lucide="briefcase-business"></i><span>记录 / 调整持仓</span></button>
                 <span>软件不会连接券商或自动下单，实际成交后由用户手工确认。</span>
               </div>
@@ -434,7 +448,7 @@
             <section class="compass-columns">
               <div>
                 <div class="section-heading">
-                  <div><h2>全球方向</h2><span>美股最近交易时段与港股当前行情</span></div>
+                  <div><h2>全球方向</h2><span>美港、日韩与台湾主要市场</span></div>
                 </div>
                 <div id="compass-global" class="compass-market-grid"></div>
               </div>
@@ -444,6 +458,14 @@
                 </div>
                 <div id="compass-domestic" class="compass-market-grid"></div>
               </div>
+            </section>
+            <section class="semiconductor-chain-section">
+              <div class="section-heading">
+                <div><h2>全球半导体链</h2><span>费城半导体、三星、SK海力士、日本设备与台积电交叉观察</span></div>
+                <span id="semiconductor-pulse" class="data-confidence">等待数据</span>
+              </div>
+              <div id="semiconductor-markets" class="semiconductor-market-grid"></div>
+              <p class="hotspots-note">海外方向是景气与风险偏好参照，A股仍需用自身板块成交、市场宽度和个股结构确认。</p>
             </section>
             <section class="compass-styles">
               <div class="section-heading">
@@ -720,6 +742,91 @@
               <p class="hotspots-note">提醒在打开应用并刷新数据时触发，不连接券商，也不会自动下单。</p>
             </section>
           </div>
+        </section>
+
+        <section id="trading-view" class="view">
+          <div class="page-heading">
+            <div>
+              <h1>交易复盘</h1>
+              <p>把研究计划、实际成交、前向验证和复盘结论连成一条闭环</p>
+            </div>
+            <div class="trading-heading-actions">
+              <button id="add-catalyst" class="secondary-button" type="button"><i data-lucide="calendar-plus"></i><span>记录事件</span></button>
+              <button id="add-trade" class="primary-button" type="button"><i data-lucide="plus"></i><span>记录交易</span></button>
+            </div>
+          </div>
+
+          <section class="action-center-section">
+            <div class="section-heading">
+              <div><h2>今日需要关注</h2><span>只汇总临近事件、组合风险、过期计划和待验证信号</span></div>
+              <span id="action-center-count" class="data-confidence">正在整理</span>
+            </div>
+            <div id="action-center-list" class="action-center-list"></div>
+          </section>
+
+          <section class="trading-workspace-grid">
+            <article class="pretrade-section">
+              <div class="section-heading">
+                <div><h2>买前计划与风险闸门</h2><span id="pretrade-symbol">跟随量化看板当前股票</span></div>
+                <button id="create-trade-plan" class="secondary-button" type="button">新建 / 更新计划</button>
+              </div>
+              <div id="pretrade-gate" class="pretrade-gate"></div>
+              <div id="saved-trade-plans" class="saved-trade-plans"></div>
+              <p class="hotspots-note">闸门只检查计划是否完整，不替代本人判断，也不会发出或执行订单。</p>
+            </article>
+
+            <article class="catalyst-calendar-section">
+              <div class="section-heading">
+                <div><h2>催化剂日历</h2><span>财报预约、解禁、分红与手工记录事件</span></div>
+                <button id="refresh-catalysts" class="secondary-button" type="button">刷新日历</button>
+              </div>
+              <div id="catalyst-error" class="error-banner hidden"></div>
+              <div id="catalyst-loading" class="loading-state hidden"><span class="spinner"></span><p>正在读取公开披露日历</p></div>
+              <div id="catalyst-calendar" class="catalyst-calendar"></div>
+              <p id="catalyst-note" class="hotspots-note">日期来自公开披露和本机记录，预约日期可能调整。</p>
+            </article>
+          </section>
+
+          <section class="trade-review-section">
+            <div class="section-heading">
+              <div><h2>真实交易统计</h2><span>只统计手工确认的实际成交，不与回测或代理收益混合</span></div>
+            </div>
+            <div id="trade-review-metrics" class="trade-review-metrics"></div>
+            <div class="review-breakdown-grid">
+              <article><h3>策略表现</h3><div id="review-by-strategy"></div></article>
+              <article><h3>行业表现</h3><div id="review-by-industry"></div></article>
+              <article><h3>持有周期</h3><div id="review-by-period"></div></article>
+              <article><h3>错误标签</h3><div id="review-by-mistake"></div></article>
+            </div>
+          </section>
+
+          <section class="table-section trade-journal-section">
+            <div class="section-heading">
+              <div><h2>真实交易流水</h2><span id="trade-journal-count">0 笔</span></div>
+            </div>
+            <div class="table-scroll">
+              <table class="trade-journal-table">
+                <thead><tr><th>日期</th><th>股票</th><th>方向</th><th>价格 / 股数</th><th>费用</th><th>策略与理由</th><th>已实现盈亏</th><th></th></tr></thead>
+                <tbody id="trade-journal-body"></tbody>
+              </table>
+            </div>
+            <p class="hotspots-note">新增交易默认同步持仓；删除流水不会倒推修改持仓，录错时请同时核对持仓数量和成本。</p>
+          </section>
+
+          <section class="table-section signal-journal-section">
+            <div class="section-heading">
+              <div><h2>信号前向验证</h2><span>冻结信号发生时的信息，下一交易日开盘作为验证起点</span></div>
+              <button id="refresh-signal-journal" class="secondary-button" type="button">更新结果</button>
+            </div>
+            <div id="signal-review-summary" class="signal-review-summary"></div>
+            <div class="table-scroll">
+              <table class="signal-journal-table">
+                <thead><tr><th>信号日期</th><th>来源 / 股票</th><th>评分</th><th>1日</th><th>3日</th><th>5日</th><th>10日</th><th>状态</th></tr></thead>
+                <tbody id="signal-journal-body"></tbody>
+              </table>
+            </div>
+            <p class="hotspots-note">结果包含佣金、印花税和滑点；样本不足时保持“跟踪中”，不会用后来数据倒填尚未发生的周期。</p>
+          </section>
         </section>
 
         <section id="ai-view" class="view">
@@ -1109,6 +1216,21 @@
               <span id="ai-settings-status">尚未读取配置</span>
             </div>
           </section>
+          <section class="backup-settings-section">
+            <div class="section-heading">
+              <div>
+                <h2>本地备份与恢复</h2>
+                <span>备份持仓、交易流水、计划、复盘和个人设置，不包含 AI API Key</span>
+              </div>
+              <span id="backup-status" class="data-confidence">仅本机文件</span>
+            </div>
+            <div class="backup-settings-row">
+              <label><span>备份密码（可选）</span><input id="backup-password" type="password" maxlength="120" autocomplete="new-password" placeholder="设置后使用 AES-256-GCM 加密"></label>
+              <button id="save-local-backup" class="primary-button" type="button">导出备份</button>
+              <button id="restore-local-backup" class="secondary-button" type="button">恢复备份</button>
+            </div>
+            <p class="hotspots-note">恢复会覆盖衡策的个人数据并重新载入页面，但不会修改其他应用数据。</p>
+          </section>
           <section class="update-section">
             <div class="update-icon"><i data-lucide="download"></i></div>
             <div class="update-copy">
@@ -1128,6 +1250,7 @@
             </div>
             <div class="update-actions">
               <button id="check-update" class="secondary-button" type="button">检查更新</button>
+              <button id="open-update-page" class="secondary-button hidden" type="button">打开下载页</button>
               <button id="download-update" class="primary-button hidden" type="button">下载新版</button>
               <button id="install-update" class="primary-button hidden" type="button">打开安装包并退出</button>
             </div>
@@ -1185,6 +1308,70 @@
         <button class="primary-button dialog-submit" value="default">保存</button>
       </form>
     </dialog>
+    <dialog id="trade-dialog">
+      <form id="trade-form" method="dialog">
+        <div class="dialog-heading">
+          <div><h2>记录真实交易</h2><p>实际成交确认后录入，可选择同步持仓</p></div>
+          <button id="close-trade-dialog" type="button" class="icon-button" title="关闭"><i data-lucide="x"></i></button>
+        </div>
+        <input name="planId" type="hidden">
+        <div class="dialog-grid">
+          <label><span>股票代码</span><input name="code" maxlength="6" pattern="\d{6}" required></label>
+          <label><span>股票名称</span><input name="name" maxlength="20" required></label>
+          <label><span>方向</span><select name="side"><option value="buy">买入</option><option value="sell">卖出</option></select></label>
+          <label><span>成交日期</span><input name="tradeAt" type="date" required></label>
+          <label><span>成交价格</span><input name="price" type="number" min="0.001" step="0.001" required></label>
+          <label><span>成交股数</span><input name="shares" type="number" min="1" step="1" required></label>
+          <label><span>实际费用（元）</span><input name="fees" type="number" min="0" step="0.01" required></label>
+          <label><span>策略</span><select name="strategy"><option>回踩计划</option><option>A股优选</option><option>尾盘观察</option><option>趋势跟随</option><option>事件驱动</option><option>手工判断</option><option>其他</option></select></label>
+        </div>
+        <label><span>交易理由</span><textarea name="reason" rows="2" maxlength="500" placeholder="为什么现在执行；什么条件会证明判断错误"></textarea></label>
+        <label><span>复盘 / 错误标签</span><input name="mistakeTags" maxlength="120" placeholder="例如：追高，仓位过重，过早卖出"></label>
+        <label class="setting-toggle dialog-toggle"><input name="syncHolding" type="checkbox" checked><span>同步更新持仓数量和成本</span></label>
+        <button class="primary-button dialog-submit" value="default">保存真实成交</button>
+      </form>
+    </dialog>
+    <dialog id="plan-dialog">
+      <form id="plan-form" method="dialog">
+        <div class="dialog-heading">
+          <div><h2>交易计划</h2><p>先定义失效条件，再考虑潜在收益</p></div>
+          <button id="close-plan-dialog" type="button" class="icon-button" title="关闭"><i data-lucide="x"></i></button>
+        </div>
+        <input name="id" type="hidden">
+        <input name="code" type="hidden">
+        <input name="name" type="hidden">
+        <input name="industry" type="hidden">
+        <div class="dialog-grid">
+          <label><span>入场区下沿</span><input name="entryLow" type="number" min="0.001" step="0.001" required></label>
+          <label><span>入场区上沿</span><input name="entryHigh" type="number" min="0.001" step="0.001" required></label>
+          <label><span>模型失效 / 止损</span><input name="stop" type="number" min="0.001" step="0.001" required></label>
+          <label><span>第一目标</span><input name="target" type="number" min="0.001" step="0.001" required></label>
+          <label><span>参考股数</span><input name="shares" type="number" min="0" step="100"></label>
+          <label><span>计划有效期</span><input name="expiresAt" type="date" required></label>
+        </div>
+        <label><span>触发条件</span><textarea name="trigger" rows="2" maxlength="180"></textarea></label>
+        <label><span>交易逻辑</span><textarea name="reason" rows="2" maxlength="500"></textarea></label>
+        <button class="primary-button dialog-submit" value="default">保存交易计划</button>
+      </form>
+    </dialog>
+    <dialog id="catalyst-dialog">
+      <form id="catalyst-form" method="dialog">
+        <div class="dialog-heading">
+          <div><h2>记录催化事件</h2><p>适合补充宏观会议、调研结论或本人关注日期</p></div>
+          <button id="close-catalyst-dialog" type="button" class="icon-button" title="关闭"><i data-lucide="x"></i></button>
+        </div>
+        <div class="dialog-grid">
+          <label><span>股票代码（可选）</span><input name="code" maxlength="6" pattern="\d{6}"></label>
+          <label><span>股票 / 市场名称</span><input name="name" maxlength="30" placeholder="例如：贵州茅台或美联储"></label>
+          <label><span>事件类型</span><select name="type"><option value="earnings">财报业绩</option><option value="unlock">解禁减持</option><option value="dividend">分红除权</option><option value="macro">宏观会议</option><option value="operation">经营事项</option><option value="other">其他事件</option></select></label>
+          <label><span>事件日期</span><input name="scheduledAt" type="date" required></label>
+          <label><span>预设影响</span><select name="impact"><option value="neutral">中性待验证</option><option value="mixed">存在分歧</option><option value="positive">偏积极</option><option value="negative">偏风险</option></select></label>
+        </div>
+        <label><span>事件标题</span><input name="title" maxlength="220" required></label>
+        <label><span>需要验证什么</span><textarea name="detail" rows="3" maxlength="420"></textarea></label>
+        <button class="primary-button dialog-submit" value="default">保存事件</button>
+      </form>
+    </dialog>
     <div id="toast" class="toast hidden"></div>
 
     <script src="../node_modules/lucide/dist/umd/lucide.min.js"></script>
@@ -1194,6 +1381,9 @@
     <script src="trading_calendar.js"></script>
     <script src="overnight_journal.js"></script>
     <script src="trade_plan.js"></script>
+    <script src="trade_journal.js"></script>
+    <script src="trading_workspace.js"></script>
+    <script src="local_backup.js"></script>
     <script src="ai_tracking.js"></script>
     <script src="intelligence.js"></script>
     <script src="alerts.js"></script>

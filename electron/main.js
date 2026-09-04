@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu, nativeImage, net, Notification, safeStorage, shell, Tray } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, Notification, safeStorage, shell, Tray } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -42,12 +42,19 @@ const {
   buildUpdateModel,
   parseChecksum,
   publicUpdateModel,
+  releaseFromAtom,
+  releaseFromLatestUrl,
   shouldQuitAfterOpeningUpdate
 } = require("./updater.js");
+const { createBackupEnvelope, openBackupEnvelope } = require("./backup.js");
+const { buildCatalystSnapshot } = require("./catalysts.js");
 const {
+  ASIA_MARKETS,
   GLOBAL_MARKETS,
+  SEMICONDUCTOR_MARKETS,
   STYLE_INDEX_DEFINITIONS,
   buildCompassSnapshot,
+  parseEastmoneyGlobalQuotes,
   parseTencentGlobalQuotes
 } = require("./compass.js");
 const {
@@ -112,6 +119,9 @@ const TENCENT_HEADERS = {
 };
 const RELEASE_API_URL =
   "https://api.github.com/repos/GuoyuanSen/HengCe/releases/latest";
+const RELEASE_LATEST_URL = "https://github.com/GuoyuanSen/HengCe/releases/latest";
+const RELEASE_ATOM_URL = "https://github.com/GuoyuanSen/HengCe/releases.atom";
+const RAW_PACKAGE_URL = "https://raw.githubusercontent.com/GuoyuanSen/HengCe/main/package.json";
 const isolatedUserData = String(process.env.HENGCE_USER_DATA_DIR || "").trim();
 if (isolatedUserData && path.isAbsolute(isolatedUserData)) {
   app.setPath("userData", isolatedUserData);
@@ -158,7 +168,8 @@ async function requestData(
     headers = {},
     parse = (text) => text,
     timeoutMs = 8000,
-    attempts = 2
+    attempts = 2,
+    serviceName = "行情服务"
   } = {}
 ) {
   let lastError;
@@ -175,11 +186,18 @@ async function requestData(
         }
       });
       if (!response.ok) {
-        throw new Error(`行情服务返回 ${response.status}`);
+        const retryAfter = response.headers.get("retry-after");
+        const rateRemaining = response.headers.get("x-ratelimit-remaining");
+        const suffix = rateRemaining === "0"
+          ? "（访问频率受限）"
+          : retryAfter
+            ? `（${retryAfter} 秒后可重试）`
+            : "";
+        throw new Error(`${serviceName}返回 HTTP ${response.status}${suffix}`);
       }
       const bytes = Buffer.from(await response.arrayBuffer());
       if (!bytes.length) {
-        throw new Error("行情服务返回空响应");
+        throw new Error(`${serviceName}返回空响应`);
       }
       const text = new TextDecoder(encoding).decode(bytes);
       return parse(text);
@@ -384,9 +402,9 @@ async function searchStocks(rawQuery) {
     .slice(0, 8);
 }
 
-async function fetchEastmoneyKLines(code, limit) {
+async function fetchEastmoneyKLines(code, limit, options = {}) {
   const params = new URLSearchParams({
-    secid: secidFor(code),
+    secid: options.secid || secidFor(code),
     klt: "101",
     fqt: "1",
     lmt: String(limit),
@@ -425,8 +443,8 @@ async function fetchEastmoneyKLines(code, limit) {
     .filter(Boolean);
 }
 
-async function fetchTencentKLines(code, limit) {
-  const symbol = tencentSymbolFor(code);
+async function fetchTencentKLines(code, limit, options = {}) {
+  const symbol = options.tencentSymbol || tencentSymbolFor(code);
   const barsByDate = new Map();
   let endDate = "";
 
@@ -460,13 +478,26 @@ async function fetchTencentKLines(code, limit) {
   }));
 }
 
-async function fetchKLines(rawCode, requestedLimit = 1300) {
+async function fetchKLines(rawCode, requestedLimit = 1300, options = {}) {
   const code = validatedCode(rawCode);
   const limit = Math.max(120, Math.min(Number(requestedLimit) || 1300, 2500));
   return firstAvailable(`历史行情 ${code}`, [
-    () => fetchTencentKLines(code, limit),
-    () => fetchEastmoneyKLines(code, limit)
+    () => fetchTencentKLines(code, limit, options),
+    () => fetchEastmoneyKLines(code, limit, options)
   ]);
+}
+
+function fetchBenchmarkKLines(benchmark, requestedLimit = 260) {
+  const definition = benchmark === "shanghai"
+    ? INDEX_DEFINITIONS.find((item) => item.code === "000001")
+    : benchmark === "shenzhen"
+      ? INDEX_DEFINITIONS.find((item) => item.code === "399001")
+      : null;
+  if (!definition) throw new Error("不支持的指数基准");
+  return fetchKLines(definition.code, requestedLimit, {
+    secid: definition.secid,
+    tencentSymbol: definition.tencentSymbol
+  });
 }
 
 async function fetchIndices() {
@@ -525,11 +556,17 @@ async function fetchStyleRepresentatives(componentType) {
 
 async function fetchMarketCompass() {
   const symbols = GLOBAL_MARKETS.map((item) => item.symbol).join(",");
-  const [globalResult, domesticResult, styleResult] = await Promise.allSettled([
+  const supplementaryDefinitions = [...ASIA_MARKETS, ...SEMICONDUCTOR_MARKETS];
+  const supplementaryIds = supplementaryDefinitions.map((item) => item.secid).join(",");
+  const [globalResult, supplementaryResult, domesticResult, styleResult] = await Promise.allSettled([
     requestData(`https://qt.gtimg.cn/q=${symbols}`, {
       encoding: "gb18030",
       headers: TENCENT_HEADERS
     }).then((text) => parseTencentGlobalQuotes(text)),
+    requestJSON(
+      `https://push2delay.eastmoney.com/api/qt/ulist.np/get?secids=${encodeURIComponent(supplementaryIds)}&fields=f12,f13,f14,f2,f3,f18,f124`,
+      { headers: { Referer: "https://quote.eastmoney.com/" } }
+    ).then((payload) => parseEastmoneyGlobalQuotes(payload, supplementaryDefinitions)),
     fetchIndices(),
     Promise.allSettled(
       STYLE_INDEX_DEFINITIONS.map(async ({ code, name, style, componentType, secid, tencentSymbol }) => {
@@ -550,19 +587,28 @@ async function fetchMarketCompass() {
       })
     ).then((results) => results.filter((item) => item.status === "fulfilled").map((item) => item.value))
   ]);
-  const globalMarkets = globalResult.status === "fulfilled" ? globalResult.value : [];
+  const supplementaryQuotes = supplementaryResult.status === "fulfilled" ? supplementaryResult.value : [];
+  const asiaSymbols = new Set(ASIA_MARKETS.map((item) => item.symbol));
+  const semiconductorSymbols = new Set(SEMICONDUCTOR_MARKETS.map((item) => item.symbol));
+  const globalMarkets = [
+    ...(globalResult.status === "fulfilled" ? globalResult.value : []),
+    ...supplementaryQuotes.filter((item) => asiaSymbols.has(item.symbol))
+  ];
+  const semiconductorMarkets = supplementaryQuotes.filter((item) => semiconductorSymbols.has(item.symbol));
   const domesticMarkets = domesticResult.status === "fulfilled" ? domesticResult.value : [];
   const styleMarkets = styleResult.status === "fulfilled" ? styleResult.value : [];
-  if (!globalMarkets.length && !domesticMarkets.length && !styleMarkets.length) {
+  if (!globalMarkets.length && !domesticMarkets.length && !styleMarkets.length && !semiconductorMarkets.length) {
     throw new Error(FRIENDLY_MARKET_ERROR);
   }
   return buildCompassSnapshot({
     globalMarkets,
     domesticMarkets,
     styleMarkets,
+    semiconductorMarkets,
     asOf: new Date().toISOString(),
     sourceStatus: {
-      globalSource: globalMarkets.length ? "腾讯全球指数" : "全球指数暂缺",
+      globalSource: globalMarkets.length ? "腾讯美港指数 / 东方财富日韩与台湾行情" : "全球指数暂缺",
+      semiconductorSource: semiconductorMarkets.length ? "东方财富全球证券行情" : "全球半导体链暂缺",
       domesticSource: domesticMarkets.length ? "腾讯行情优先，东方财富降级" : "A股指数暂缺",
       styleSource: styleMarkets.length ? "腾讯行情优先，东方财富降级" : "A股风格指数暂缺"
     }
@@ -582,6 +628,77 @@ function fetchDataset(reportName, code) {
   return requestJSON(
     `https://datacenter-web.eastmoney.com/api/data/v1/get?${params}`
   );
+}
+
+function calendarDateOffset(days) {
+  return marketParts(new Date(Date.now() + days * 86400000)).dateKey;
+}
+
+function fetchCatalystDataset(reportName, codes, dateField) {
+  const quotedCodes = codes.map((code) => `"${code}"`).join(",");
+  const start = calendarDateOffset(-10);
+  const end = calendarDateOffset(180);
+  const params = new URLSearchParams({
+    reportName,
+    columns: "ALL",
+    filter: `(SECURITY_CODE in (${quotedCodes}))(${dateField}>='${start}')(${dateField}<='${end}')`,
+    pageNumber: "1",
+    pageSize: "100",
+    sortColumns: dateField,
+    sortTypes: "1",
+    source: "WEB",
+    client: "WEB"
+  });
+  return requestJSON(
+    `https://datacenter-web.eastmoney.com/api/data/v1/get?${params}`,
+    { headers: { Referer: "https://data.eastmoney.com/" } }
+  );
+}
+
+async function fetchCatalysts(rawCodes = []) {
+  const codes = [...new Set(rawCodes.map((code) => {
+    try {
+      return validatedCode(code);
+    } catch {
+      return null;
+    }
+  }).filter(Boolean))].slice(0, 16);
+  if (!codes.length) {
+    return buildCatalystSnapshot({}, {
+      codes,
+      sourceStatus: { loaded: 0, requested: 0, partial: false, sources: [] }
+    });
+  }
+  const definitions = [
+    ["appointments", "RPT_PUBLIC_BS_APPOIN", "APPOINT_PUBLISH_DATE", "定期报告预约"],
+    ["unlocks", "RPT_LIFT_STAGE", "FREE_DATE", "限售解禁"],
+    ["dividends", "RPT_SHAREBONUS_DET", "EX_DIVIDEND_DATE", "分红除权"],
+    ["shareholderChanges", "RPT_SHARE_HOLDER_INCREASE", "NOTICE_DATE", "股东增减持"]
+  ];
+  const settled = await Promise.allSettled(
+    definitions.map(([, reportName, dateField]) => fetchCatalystDataset(reportName, codes, dateField))
+  );
+  const payloads = {};
+  const sources = definitions.map(([key, , , label], index) => {
+    const result = settled[index];
+    if (result.status === "fulfilled") payloads[key] = result.value;
+    return {
+      name: label,
+      available: result.status === "fulfilled",
+      detail: result.status === "rejected" ? String(result.reason?.message || "暂不可用") : "公开披露日历"
+    };
+  });
+  const loaded = sources.filter((item) => item.available).length;
+  if (!loaded) throw settled[0]?.reason || new Error("催化剂日历暂不可用");
+  return buildCatalystSnapshot(payloads, {
+    codes,
+    sourceStatus: {
+      loaded,
+      requested: definitions.length,
+      partial: loaded < definitions.length,
+      sources
+    }
+  });
 }
 
 function fetchValuationSnapshot(code) {
@@ -905,8 +1022,8 @@ async function fetchRecommendations() {
   if (!pool.length) throw new Error(FRIENDLY_MARKET_ERROR);
   const selected = pool.slice(0, 30);
   const benchmarkPromise = Promise.allSettled([
-    fetchKLines("000001", 260),
-    fetchKLines("399001", 260)
+    fetchBenchmarkKLines("shanghai", 260),
+    fetchBenchmarkKLines("shenzhen", 260)
   ]);
   const settled = await mapWithConcurrency(selected, 6, async (candidate) => {
     const bars = await fetchKLines(candidate.code, 260);
@@ -1518,23 +1635,199 @@ async function runAiContextAssistant(value = {}) {
   };
 }
 
-async function latestUpdateModel() {
-  const release = await requestJSON(RELEASE_API_URL, {
+function updateCachePath() {
+  return path.join(app.getPath("userData"), "latest-release.json");
+}
+
+function readUpdateCache() {
+  try {
+    const value = JSON.parse(fs.readFileSync(updateCachePath(), "utf8"));
+    const savedAt = Date.parse(value?.savedAt || "");
+    if (!value?.release?.tag_name || !Number.isFinite(savedAt) || Date.now() - savedAt > 30 * 86400000) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function writeUpdateCache(release) {
+  const destination = updateCachePath();
+  const temporary = `${destination}.tmp`;
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  fs.writeFileSync(temporary, `${JSON.stringify({ savedAt: new Date().toISOString(), release }, null, 2)}\n`, { mode: 0o600 });
+  fs.renameSync(temporary, destination);
+}
+
+async function releaseFromRedirect() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6500);
+  try {
+    const response = await net.fetch(RELEASE_LATEST_URL, {
+      signal: controller.signal,
+      headers: {
+        "Cache-Control": "no-cache",
+        Accept: "text/html,application/xhtml+xml",
+        "User-Agent": `Mozilla/5.0 HengCe/${app.getVersion()}`
+      }
+    });
+    if (!response.ok) throw new Error(`版本备用服务返回 HTTP ${response.status}`);
+    const release = releaseFromLatestUrl(response.url);
+    if (!release) throw new Error("版本备用服务未返回有效标签");
+    return release;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function releaseFromAtomFeed() {
+  const text = await requestData(RELEASE_ATOM_URL, {
     headers: {
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28"
-    }
+      Accept: "application/atom+xml,application/xml,text/xml",
+      "User-Agent": `Mozilla/5.0 HengCe/${app.getVersion()}`
+    },
+    timeoutMs: 6500,
+    attempts: 1,
+    serviceName: "GitHub Releases 订阅"
   });
-  return buildUpdateModel(
-    release,
-    app.getVersion(),
-    process.platform,
-    process.arch
-  );
+  const release = releaseFromAtom(text);
+  if (!release) throw new Error("GitHub Releases 订阅未返回有效标签");
+  return release;
+}
+
+async function releaseFromPublishedPackage() {
+  const packageJson = await requestJSON(RAW_PACKAGE_URL, {
+    headers: { Accept: "application/json" },
+    timeoutMs: 6500,
+    attempts: 1,
+    serviceName: "GitHub 静态版本源"
+  });
+  const version = String(packageJson?.version || "").trim();
+  if (!/^\d+(?:\.\d+){1,3}$/.test(version)) throw new Error("GitHub 静态版本源格式无效");
+  const release = releaseFromLatestUrl(`https://github.com/GuoyuanSen/HengCe/releases/tag/v${version}`);
+  const model = buildUpdateModel(release, app.getVersion(), process.platform, process.arch);
+  if (model._checksumUrl) {
+    const checksum = await requestData(model._checksumUrl, {
+      headers: { Accept: "text/plain" },
+      timeoutMs: 6500,
+      attempts: 1,
+      serviceName: "GitHub 发布附件"
+    });
+    if (!parseChecksum(checksum, model.assetName)) throw new Error("GitHub 静态版本尚未完成发布");
+  }
+  return release;
+}
+
+async function fallbackUpdateRelease() {
+  const providers = [
+    ["github-redirect", "GitHub API 暂不可用，已通过官方 latest 地址确认版本", releaseFromRedirect],
+    ["github-atom", "GitHub API 暂不可用，已通过官方 Releases 订阅确认版本", releaseFromAtomFeed],
+    ["github-static", "GitHub API 暂不可用，已通过仓库版本和发布校验文件确认版本", releaseFromPublishedPackage]
+  ];
+  let lastError = null;
+  for (const [source, notice, provider] of providers) {
+    try {
+      return { release: await provider(), source, notice };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("版本备用服务暂不可用");
+}
+
+async function latestUpdateModel() {
+  let release = null;
+  let source = "github-api";
+  let degraded = false;
+  let notice = "";
+  let primaryError = null;
+  try {
+    release = await requestJSON(RELEASE_API_URL, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+      },
+      timeoutMs: 6500,
+      attempts: 1,
+      serviceName: "GitHub 版本服务"
+    });
+    writeUpdateCache(release);
+  } catch (error) {
+    primaryError = error;
+    try {
+      const fallback = await fallbackUpdateRelease();
+      release = fallback.release;
+      source = fallback.source;
+      degraded = true;
+      notice = fallback.notice;
+      writeUpdateCache(release);
+    } catch {
+      const cached = readUpdateCache();
+      if (cached?.release) {
+        release = cached.release;
+        source = "local-cache";
+        degraded = true;
+        notice = `联网检查失败，显示 ${cached.savedAt.slice(0, 10)} 的最近成功结果`;
+      }
+    }
+  }
+  if (!release) {
+    const detail = String(primaryError?.message || "版本服务暂时无响应");
+    throw new Error(detail.replace(/^行情服务/, "GitHub 版本服务"));
+  }
+  return {
+    ...buildUpdateModel(release, app.getVersion(), process.platform, process.arch),
+    checkedAt: new Date().toISOString(),
+    source,
+    degraded,
+    notice
+  };
 }
 
 async function checkForUpdate() {
   return publicUpdateModel(await latestUpdateModel());
+}
+
+async function saveLocalBackup(payload, password = "") {
+  const serialized = JSON.stringify(payload || {});
+  if (Buffer.byteLength(serialized) > 8 * 1024 * 1024) throw new Error("本地数据超过备份大小限制");
+  const options = {
+    title: "保存衡策本地备份",
+    defaultPath: `HengCe-Backup-${new Date().toISOString().slice(0, 10)}.hengce-backup`,
+    filters: [{ name: "衡策备份", extensions: ["hengce-backup"] }]
+  };
+  const result = mainWindow
+    ? await dialog.showSaveDialog(mainWindow, options)
+    : await dialog.showSaveDialog(options);
+  if (result.canceled || !result.filePath) return { saved: false, canceled: true };
+  const envelope = createBackupEnvelope(payload, String(password || "").slice(0, 256));
+  const temporary = `${result.filePath}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify(envelope, null, 2)}\n`, { mode: 0o600 });
+  fs.renameSync(temporary, result.filePath);
+  return { saved: true, canceled: false, encrypted: envelope.encrypted, fileName: path.basename(result.filePath) };
+}
+
+async function openLocalBackup(password = "") {
+  const options = {
+    title: "选择衡策本地备份",
+    properties: ["openFile"],
+    filters: [{ name: "衡策备份", extensions: ["hengce-backup", "json"] }]
+  };
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
+  if (result.canceled || !result.filePaths?.[0]) return { opened: false, canceled: true };
+  const file = result.filePaths[0];
+  const size = fs.statSync(file).size;
+  if (size > 12 * 1024 * 1024) throw new Error("备份文件过大，已拒绝读取");
+  const envelope = JSON.parse(fs.readFileSync(file, "utf8"));
+  const payload = openBackupEnvelope(envelope, String(password || "").slice(0, 256));
+  return {
+    opened: true,
+    canceled: false,
+    encrypted: Boolean(envelope.encrypted),
+    fileName: path.basename(file),
+    payload
+  };
 }
 
 async function sha256File(file) {
@@ -1821,6 +2114,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   ipcMain.handle("market:klines", (_, code, limit, options = {}) =>
     cachedRequest(`klines:${code}:${limit}`, 300000, () => fetchKLines(code, limit), options.force)
   );
+  ipcMain.handle("market:index-klines", (_, benchmark, limit = 260, options = {}) =>
+    cachedRequest(`index-klines:${benchmark}:${limit}`, 300000, () => fetchBenchmarkKLines(benchmark, limit), options.force)
+  );
   ipcMain.handle("market:indices", (_, options = {}) =>
     cachedRequest("indices", 30000, () => fetchIndices(), options.force)
   );
@@ -1860,6 +2156,12 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   ipcMain.handle("market:announcements", (_, code, options = {}) =>
     cachedRequest(`announcements:${code}`, 1800000, () => fetchStockAnnouncements(code), options.force)
   );
+  ipcMain.handle("market:catalysts", (_, codes = [], options = {}) => {
+    const normalized = [...new Set((Array.isArray(codes) ? codes : [])
+      .map((code) => String(code).trim())
+      .filter((code) => /^\d{6}$/.test(code)))].sort().slice(0, 16);
+    return cachedRequest(`catalysts:${normalized.join(",")}`, 1800000, () => fetchCatalysts(normalized), options.force);
+  });
   ipcMain.handle("market:intelligence", (_, options = {}) =>
     fetchMarketIntelligence(options)
   );
@@ -1884,6 +2186,12 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     downloadLatestUpdate(event.sender)
   );
   ipcMain.handle("system:update-install", () => installDownloadedUpdate());
+  ipcMain.handle("system:backup-save", (_, payload = {}, password = "") =>
+    saveLocalBackup(payload, password)
+  );
+  ipcMain.handle("system:backup-open", (_, password = "") =>
+    openLocalBackup(password)
+  );
   ipcMain.handle("system:window-preferences", (_, preferences = {}) => {
     minimizeToTrayEnabled = preferences.minimizeToTray !== false;
     updateTrayMenu();
