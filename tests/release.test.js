@@ -21,11 +21,14 @@ const releaseWorkflow = fs.readFileSync(
   path.join(root, ".github", "workflows", "release.yml"),
   "utf8"
 );
+const macBuild = fs.readFileSync(path.join(root, "scripts", "build.js"), "utf8");
 
 test("release version is synchronized for v0.6.0", () => {
   assert.equal(packageJson.version, "0.6.0");
   assert.match(packageJson.scripts["build:win"], /build_windows\.js/);
-  assert.match(fs.readFileSync(path.join(root, "scripts", "build.js"), "utf8"), /ELECTRON_ZIP_DIR/);
+  assert.match(macBuild, /ELECTRON_ZIP_DIR/);
+  assert.match(macBuild, /CFBundleIconFile/);
+  assert.match(macBuild, /AppIcon\.icns/);
 });
 
 test("tag workflow builds both platforms and publishes release assets", () => {

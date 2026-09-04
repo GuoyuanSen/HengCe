@@ -337,6 +337,7 @@
           <div id="intelligence-content" class="hidden">
             <section id="intelligence-summary" class="hotspots-summary"></section>
             <section class="intelligence-filters" aria-label="市场情报筛选">
+              <label class="intelligence-search-filter"><span>搜索</span><input id="intelligence-search" type="search" placeholder="标题、主题或关键词"></label>
               <label><span>生命周期</span><select id="intelligence-phase"><option value="all">全部阶段</option><option value="emerging">萌芽</option><option value="warming">升温</option><option value="hot">高热</option><option value="diverging">分化</option><option value="declining">衰退</option></select></label>
               <label><span>重要度</span><select id="intelligence-importance"><option value="all">全部事件</option><option value="important">仅重要</option><option value="focus">关注及以上</option><option value="bookmarked">我的收藏</option></select></label>
               <label><span>方向</span><select id="intelligence-sentiment"><option value="all">全部方向</option><option value="positive">偏积极</option><option value="negative">偏谨慎</option><option value="mixed">存在分歧</option><option value="neutral">中性</option></select></label>
@@ -425,6 +426,21 @@
                 <div><h2>股票大类与风格</h2><span>观察大盘、小盘、价值与科技成长谁更占优</span></div>
               </div>
               <div id="compass-styles" class="compass-style-grid"></div>
+            </section>
+            <section class="macro-data-section">
+              <div class="section-heading">
+                <div><h2>宏观数据中心</h2><span>CPI、PPI、PMI、M1/M2、LPR 与 Shibor，逐项显示期次和原始发布机构</span></div>
+                <div class="macro-heading-actions">
+                  <button id="open-social-financing" class="text-button" type="button">央行社融原表</button>
+                  <button id="refresh-macro" class="secondary-button" type="button">刷新宏观数据</button>
+                </div>
+              </div>
+              <div id="macro-error" class="error-banner hidden"></div>
+              <div id="macro-loading" class="loading-state hidden"><span class="spinner"></span><p>正在读取宏观时间序列</p></div>
+              <div id="macro-content">
+                <div id="macro-indicators" class="macro-indicator-grid"></div>
+                <p id="macro-note" class="hotspots-note"></p>
+              </div>
             </section>
             <section class="compass-signals">
               <div class="section-heading"><div><h2>环境解读</h2><span>解释指标，不预测单只股票</span></div></div>
@@ -712,6 +728,24 @@
             </div>
           </section>
           <div id="ai-config-banner" class="ai-config-banner hidden"></div>
+          <section class="context-assistant-section">
+            <div class="section-heading">
+              <div><h2>上下文问答</h2><span>围绕当前股票、持仓、热点和风险提问；所有结论都回到已加载事实</span></div>
+              <span id="assistant-mode" class="data-confidence">本地规则</span>
+            </div>
+            <div class="assistant-compose">
+              <textarea id="assistant-question" rows="2" maxlength="600" placeholder="例如：当前最大的风险是什么？板块升温但个股没有跟涨该怎么验证？"></textarea>
+              <button id="ask-assistant" class="primary-button" type="button">分析问题</button>
+            </div>
+            <div class="assistant-quick-questions">
+              <button type="button" data-assistant-prompt="当前最需要防范的风险是什么？">主要风险</button>
+              <button type="button" data-assistant-prompt="当前股票的技术面和估值是否出现背离？">技术/估值背离</button>
+              <button type="button" data-assistant-prompt="我的组合集中度和行业暴露有什么问题？">组合集中度</button>
+              <button type="button" data-assistant-prompt="相关热点是否已经获得量价确认？">热点确认</button>
+            </div>
+            <div id="assistant-loading" class="loading-state hidden"><span class="spinner"></span><p>正在整理当前上下文</p></div>
+            <div id="assistant-answer" class="assistant-answer empty"><span>输入问题后生成分视角、可验证的回答</span></div>
+          </section>
           <div id="ai-error" class="error-banner hidden"></div>
           <div id="ai-loading" class="loading-state hidden">
             <span class="spinner"></span>
@@ -862,6 +896,16 @@
             <div id="portfolio-risk-content" class="portfolio-risk-content">
               <span class="muted">添加持仓后计算组合风险</span>
             </div>
+            <div id="portfolio-attribution" class="portfolio-attribution hidden">
+              <div class="portfolio-equity-proxy">
+                <div><h3>组合收益代理曲线</h3><span>按当前权重回放近120个共同交易日，不是账户真实流水</span></div>
+                <div class="chart-wrap portfolio-equity"><canvas id="portfolio-equity-chart"></canvas></div>
+              </div>
+              <div>
+                <h3>个股与行业归因</h3>
+                <div id="portfolio-contributions" class="portfolio-contributions"></div>
+              </div>
+            </div>
           </section>
           <section class="table-section holdings-table-section">
             <div class="table-scroll">
@@ -985,6 +1029,20 @@
               <span>最小化到系统托盘</span>
             </label>
           </section>
+          <section class="alert-settings-section">
+            <div class="section-heading">
+              <div><h2>情报提醒</h2><span>规则只保存在本机；支持重要度、持仓关联、关键词与静默时段</span></div>
+              <label class="setting-toggle"><input id="alerts-enabled" type="checkbox"><span>启用提醒</span></label>
+            </div>
+            <div class="alert-settings-grid">
+              <label><span>最低重要度</span><select id="alert-minimum-importance"><option value="50">关注及以上（50）</option><option value="70">重要（70）</option><option value="85">极重要（85）</option></select></label>
+              <label><span>提醒范围</span><select id="alert-portfolio-only"><option value="true">持仓/观察相关优先</option><option value="false">全部匹配事件</option></select></label>
+              <label class="alert-keywords"><span>额外关键词</span><input id="alert-keywords" placeholder="AI，黄金，机器人（逗号分隔）"></label>
+              <label><span>静默开始</span><input id="alert-quiet-start" type="time"></label>
+              <label><span>静默结束</span><input id="alert-quiet-end" type="time"></label>
+            </div>
+            <p id="alert-settings-status" class="hotspots-note">新事件命中规则后通过系统通知提醒；不会发送到邮箱或第三方。</p>
+          </section>
           <section class="ai-settings-section">
             <div class="section-heading">
               <div>
@@ -1105,6 +1163,8 @@
     <script src="trade_plan.js"></script>
     <script src="ai_tracking.js"></script>
     <script src="intelligence.js"></script>
+    <script src="alerts.js"></script>
+    <script src="research_assistant.js"></script>
     <script src="renderer.js"></script>
   </body>
 </html>

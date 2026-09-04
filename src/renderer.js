@@ -115,6 +115,33 @@ if (!window.hengce && isBrowserPreview) {
       sourceStatus: { globalSource: "浏览器演示数据", domesticSource: "浏览器演示数据", styleSource: "浏览器演示数据", loaded: 14, expected: 14, partial: false },
       note: "风向标描述市场环境，不预测单只股票，也不构成交易建议。"
     }),
+    macro: async () => ({
+      asOf: new Date().toISOString(),
+      indicators: [
+        ["cpi", "居民消费价格 CPI", "CPI", "价格", 0.5, "%", "2026-07-01", 0.1],
+        ["ppi", "工业生产者出厂价格 PPI", "PPI", "价格", 3.5, "%", "2026-07-01", -0.6],
+        ["pmi", "制造业采购经理指数 PMI", "PMI", "景气", 49.8, "", "2026-08-01", 0.6],
+        ["m2", "广义货币 M2 同比", "M2", "流动性", 7.7, "%", "2026-07-01", -0.3],
+        ["m1", "狭义货币 M1 同比", "M1", "流动性", 4, "%", "2026-07-01", 0],
+        ["lpr1y", "1年期贷款市场报价利率", "LPR 1Y", "利率", 3, "%", "2026-08-20", 0],
+        ["lpr5y", "5年期以上贷款市场报价利率", "LPR 5Y", "利率", 3.5, "%", "2026-08-20", 0],
+        ["shiborOn", "上海银行间同业拆放利率（隔夜）", "Shibor O/N", "利率", 1.362, "%", "2026-09-04", -0.001]
+      ].map(([key, label, shortLabel, group, value, unit, date, change]) => ({
+        key, label, shortLabel, group, value, unit, date, change,
+        previousValue: value - change,
+        signal: {
+          tone: key === "pmi" ? (value >= 50 ? "positive" : "negative") : key.startsWith("lpr") ? (change < 0 ? "positive" : change > 0 ? "negative" : "neutral") : "neutral",
+          label: key === "pmi" ? (value >= 50 ? "扩张区间" : "收缩区间") : change > 0 ? "较上期回升" : change < 0 ? "较上期回落" : "与上期持平",
+          detail: `较上期 ${change >= 0 ? "+" : ""}${change}`
+        },
+        freshness: "最新一期",
+        series: Array.from({ length: 12 }, (_, index) => ({ date, value: value - change + change * index / 11 })),
+        aggregator: "浏览器演示数据",
+        originalSource: ["m1", "m2"].includes(key) ? "中国人民银行" : key.startsWith("lpr") || key.startsWith("shibor") ? "全国银行间同业拆借中心" : "国家统计局",
+        sourceUrl: "https://data.stats.gov.cn/"
+      })),
+      sourceStatus: { partial: false, missing: [], note: "浏览器演示宏观数据" }
+    }),
     valuation: async (code) => ({
       code,
       name: code === "603039" ? "泛微网络" : "演示标的",
@@ -431,6 +458,7 @@ if (!window.hengce && isBrowserPreview) {
     testAi: async () => ({ ok: true, model: "gpt-5.6-luna", endpoint: "api.openai.com" }),
     trackWithAi: async () => { throw new Error("浏览器预览使用本地量化追踪摘要"); },
     interpretEvent: async () => { throw new Error("浏览器预览使用本地事件解读"); },
+    askAssistant: async () => { throw new Error("浏览器预览使用本地上下文回答"); },
     onWindowPreferences: () => () => {},
     onUpdateProgress: () => () => {}
   };
@@ -455,6 +483,7 @@ if (!window.hengce) {
     profile: unavailable,
     announcements: unavailable,
     intelligence: unavailable,
+    macro: unavailable,
     notify: async () => false,
     openExternal: unavailable,
     checkForUpdate: unavailable,
@@ -468,6 +497,7 @@ if (!window.hengce) {
     testAi: unavailable,
     trackWithAi: unavailable,
     interpretEvent: unavailable,
+    askAssistant: unavailable,
     onWindowPreferences: () => () => {},
     onUpdateProgress: () => () => {}
   };
@@ -508,6 +538,12 @@ const {
   marketBriefs,
   portfolioImpacts
 } = window.HengCeIntelligence;
+const {
+  DEFAULT_ALERT_PREFERENCES,
+  normalizeAlertPreferences,
+  selectAlertEvent
+} = window.HengCeAlerts;
+const { localContextAnswer } = window.HengCeResearchAssistant;
 
 const DEFAULT_SETTINGS = {
   initialCapital: 100000,
@@ -536,6 +572,8 @@ const storedAiSnapshots = readJSON("hengce.aiTracking.v1", []);
 const storedIntelligenceHistory = readJSON("hengce.intelligence.history.v1", []);
 const storedIntelligenceSeen = readJSON("hengce.intelligence.seen.v1", []);
 const storedIntelligenceBookmarks = readJSON("hengce.intelligence.bookmarks.v1", []);
+const storedAlertPreferences = readJSON("hengce.alertPreferences.v1", DEFAULT_ALERT_PREFERENCES);
+const storedAssistantHistory = readJSON("hengce.aiAssistant.v1", []);
 const OVERNIGHT_MARKET_SCOPES = ["main", "main-growth", "main-star", "all"];
 const storedOvernightMarketScope = OVERNIGHT_MARKET_SCOPES.includes(storedUi.overnightMarketScope)
   ? storedUi.overnightMarketScope
@@ -582,7 +620,8 @@ const state = {
   intelligenceFilters: {
     phase: storedUi.intelligenceFilters?.phase || "all",
     importance: storedUi.intelligenceFilters?.importance || "all",
-    sentiment: storedUi.intelligenceFilters?.sentiment || "all"
+    sentiment: storedUi.intelligenceFilters?.sentiment || "all",
+    search: storedUi.intelligenceFilters?.search || ""
   },
   intelligenceTheme: storedUi.intelligenceTheme || "",
   intelligenceQuestion: ["focus", "portfolio", "risk", "divergence"].includes(storedUi.intelligenceQuestion) ? storedUi.intelligenceQuestion : "focus",
@@ -595,6 +634,9 @@ const state = {
   compass: null,
   compassLoading: false,
   compassError: "",
+  macro: null,
+  macroLoading: false,
+  macroError: "",
   hotspotMode: ["composite", "todayFlow", "threeDayFlow"].includes(storedUi.hotspotMode) ? storedUi.hotspotMode : "composite",
   expandedHotspotBoard: null,
   hotspotMembers: new Map(),
@@ -638,6 +680,7 @@ const state = {
   profiles: new Map(),
   portfolioRisk: null,
   portfolioRiskLoading: false,
+  alertPreferences: normalizeAlertPreferences(storedAlertPreferences),
   settings: { ...DEFAULT_SETTINGS, ...readJSON("hengce.settings.v1", {}) },
   updateInfo: null,
   appVersion: "--",
@@ -666,6 +709,9 @@ const state = {
   aiLoading: false,
   aiError: "",
   aiSnapshots: Array.isArray(storedAiSnapshots) ? storedAiSnapshots.slice(0, 80) : [],
+  assistantAnswer: Array.isArray(storedAssistantHistory) ? storedAssistantHistory[0] || null : null,
+  assistantLoading: false,
+  assistantHistory: Array.isArray(storedAssistantHistory) ? storedAssistantHistory.slice(0, 20) : [],
   dashboardSnapshotStale: false,
   backtestHistoryCode: "",
   backtestHistoryLoading: false,
@@ -1541,10 +1587,16 @@ function renderEventInterpretation(entry) {
 }
 
 function filteredIntelligence(snapshot) {
+  const query = String(state.intelligenceFilters.search || "").trim().toLowerCase();
+  const matchesSearch = (event) => !query || [event.title, event.summary, event.theme, ...(event.tags || [])]
+    .join(" ")
+    .toLowerCase()
+    .includes(query);
   if (state.intelligenceFilters.importance === "bookmarked") {
     return state.intelligenceBookmarks.filter((event) =>
       (state.intelligenceFilters.sentiment === "all" || event.sentiment === state.intelligenceFilters.sentiment) &&
-      (!state.intelligenceTheme || event.themeKey === state.intelligenceTheme)
+      (!state.intelligenceTheme || event.themeKey === state.intelligenceTheme) &&
+      matchesSearch(event)
     );
   }
   const phase = state.intelligenceFilters.phase;
@@ -1557,7 +1609,7 @@ function filteredIntelligence(snapshot) {
     if (state.intelligenceFilters.importance === "important" && event.importance < 70) return false;
     if (state.intelligenceFilters.importance === "focus" && event.importance < 50) return false;
     if (state.intelligenceFilters.sentiment !== "all" && event.sentiment !== state.intelligenceFilters.sentiment) return false;
-    return true;
+    return matchesSearch(event);
   });
 }
 
@@ -1588,6 +1640,7 @@ function renderIntelligence() {
   $("#intelligence-phase").value = state.intelligenceFilters.phase;
   $("#intelligence-importance").value = state.intelligenceFilters.importance;
   $("#intelligence-sentiment").value = state.intelligenceFilters.sentiment;
+  $("#intelligence-search").value = state.intelligenceFilters.search;
   const aiNote = $("#intelligence-ai-note");
   aiNote.textContent = state.aiConfig?.hasApiKey
     ? `事件解读可使用 ${state.aiConfig.model}；AI失败时自动保留本地规则结果。`
@@ -1813,6 +1866,7 @@ function notifyIntelligenceImpact(snapshot, previous, background) {
   const previousIds = new Set((previous?.events || []).map((event) => event.id));
   const impacts = intelligenceImpacts(snapshot);
   if (!firstBaseline && background) {
+    const newEvents = (snapshot.events || []).filter((item) => !previousIds.has(item.id));
     const newImportant = (snapshot.events || []).filter((item) =>
       item.importance >= 70 &&
       !previousIds.has(item.id)
@@ -1820,11 +1874,10 @@ function notifyIntelligenceImpact(snapshot, previous, background) {
     if (state.activeView !== "intelligence") {
       state.intelligenceUnseenImportant += newImportant.length;
     }
-    const event = newImportant.find((item) =>
-      impacts.some((impact) => impact.themeKey === item.themeKey));
+    const event = selectAlertEvent(newEvents, impacts, state.alertPreferences, new Date());
     if (event) {
       const affected = impacts.filter((impact) => impact.themeKey === event.themeKey).map((impact) => impact.name).slice(0, 3);
-      window.hengce.notify("衡策持仓情报", `${event.title}${affected.length ? ` · 关联 ${affected.join("、")}` : ""}`);
+      window.hengce.notify("衡策情报提醒", `${event.title}${affected.length ? ` · 关联 ${affected.join("、")}` : ""}`);
     }
   }
   (snapshot.events || []).forEach((event) => state.intelligenceSeen.add(event.id));
@@ -2247,6 +2300,75 @@ async function loadCompass({ force = false } = {}) {
   } finally {
     state.compassLoading = false;
     renderCompass();
+  }
+}
+
+function macroBarSeries(points = []) {
+  const values = points.map((point) => Number(point.value)).filter(Number.isFinite);
+  if (!values.length) return "";
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+  const spread = Math.max(maximum - minimum, 0.1);
+  return points.slice(-12).map((point) => {
+    const height = 18 + ((Number(point.value) - minimum) / spread) * 12;
+    return `<i style="height:${Math.max(4, Math.min(30, height))}px" title="${escapeHTML(point.date)} · ${number(point.value, 2)}"></i>`;
+  }).join("");
+}
+
+function renderMacro() {
+  const loading = $("#macro-loading");
+  const content = $("#macro-content");
+  const error = $("#macro-error");
+  const refresh = $("#refresh-macro");
+  loading.classList.toggle("hidden", !state.macroLoading);
+  content.classList.toggle("hidden", state.macroLoading && !state.macro);
+  error.textContent = state.macroError;
+  error.classList.toggle("hidden", !state.macroError);
+  refresh.disabled = state.macroLoading;
+  if (!state.macro) {
+    $("#macro-indicators").innerHTML = '<div class="empty-state"><strong>宏观数据尚未加载</strong><span>进入市场风向标后自动读取</span></div>';
+    return;
+  }
+  $("#macro-indicators").innerHTML = state.macro.indicators.map((item) => `
+    <article class="macro-indicator-card">
+      <span>${escapeHTML(item.group)} · ${escapeHTML(item.shortLabel)}</span>
+      <strong>${number(item.value, item.key.startsWith("shibor") ? 3 : item.key.startsWith("lpr") ? 2 : 1)}${escapeHTML(item.unit || "")}</strong>
+      <em class="${escapeHTML(item.signal?.tone || "neutral")}">${escapeHTML(item.signal?.label || "等待判断")}</em>
+      <div class="macro-mini-series">${macroBarSeries(item.series)}</div>
+      <small>${escapeHTML(item.date)} · ${escapeHTML(item.freshness)}</small>
+      <small>${escapeHTML(item.signal?.detail || "")} · 原始发布：${escapeHTML(item.originalSource)}</small>
+      <button class="text-button macro-source" data-url="${escapeHTML(item.sourceUrl)}">查看原始机构</button>
+    </article>
+  `).join("") || '<div class="empty-state"><strong>宏观字段暂不可用</strong><span>请稍后刷新</span></div>';
+  const asOf = new Date(state.macro.asOf);
+  $("#macro-note").textContent = `${state.macro.stale ? "当前显示最近成功快照 · " : ""}更新时间 ${Number.isNaN(asOf.getTime()) ? "--" : asOf.toLocaleString("zh-CN")} · ${state.macro.sourceStatus?.note || "逐项标注来源"}${state.macro.sourceStatus?.missing?.length ? ` · 暂缺 ${state.macro.sourceStatus.missing.join("、")}` : ""}。各指标发布频率不同，不能直接当作实时交易信号。`;
+  $$(".macro-source").forEach((button) =>
+    button.addEventListener("click", () => window.hengce.openExternal(button.dataset.url))
+  );
+}
+
+async function loadMacro({ force = false } = {}) {
+  if (state.macro && !force) {
+    renderMacro();
+    return;
+  }
+  state.macroLoading = true;
+  state.macroError = "";
+  renderMacro();
+  try {
+    state.macro = await window.hengce.macro({ force });
+    writeJSON("hengce.macro.snapshot.v1", state.macro);
+  } catch (error) {
+    const stored = readJSON("hengce.macro.snapshot.v1", null);
+    if (!state.macro && stored?.indicators?.length) {
+      state.macro = { ...stored, stale: true };
+      state.macroError = "宏观数据源暂时无响应，当前显示最近成功快照。";
+    } else {
+      state.macroError = friendlyMarketError(error);
+    }
+  } finally {
+    state.macroLoading = false;
+    renderMacro();
   }
 }
 
@@ -3535,6 +3657,7 @@ function renderPortfolioRisk() {
   const risk = state.portfolioRisk;
   if (!risk || !state.holdings.length) {
     container.innerHTML = '<span class="muted">添加持仓后计算组合风险</span>';
+    $("#portfolio-attribution").classList.add("hidden");
     return;
   }
   const riskClass =
@@ -3545,10 +3668,11 @@ function renderPortfolioRisk() {
         : "portfolio-risk-low";
   const metrics = [
     ["组合风险", risk.riskLevel, `${risk.sampleDays} 个共同交易日`, riskClass],
+    ["区间收益代理", risk.totalReturn == null ? "--" : plainPercent(risk.totalReturn, true), "按当前权重回放", directionClass(risk.totalReturn)],
+    ["代理最大回撤", risk.maxDrawdown == null ? "--" : plainPercent(-risk.maxDrawdown, true), "峰谷损失", risk.maxDrawdown > 0.18 ? "portfolio-risk-high" : risk.maxDrawdown > 0.1 ? "portfolio-risk-medium" : ""],
     ["年化波动", risk.annualizedVolatility == null ? "--" : plainPercent(risk.annualizedVolatility, true), "按日收益估算"],
     ["平均相关性", risk.averageCorrelation == null ? "--" : number(risk.averageCorrelation), "越低越分散"],
-    ["最大单股占比", plainPercent(risk.maxWeight, true), risk.maxWeight > 0.4 ? "集中度偏高" : "集中度可控"],
-    ["分散评分", `${risk.diversificationScore}`, "仅衡量权重分散"]
+    ["最大单股占比", plainPercent(risk.maxWeight, true), risk.maxWeight > 0.4 ? "集中度偏高" : "集中度可控"]
   ];
   container.innerHTML = `
     <div class="portfolio-risk-metrics">
@@ -3569,8 +3693,31 @@ function renderPortfolioRisk() {
           <strong>${plainPercent(industry.weight, true)}</strong>
         </div>
       `).join("") || '<span class="muted">行业资料暂不可用</span>'}
+      ${(risk.riskAlerts || []).length ? `<ul class="portfolio-risk-alerts">${risk.riskAlerts.map((item) => `<li>${escapeHTML(item)}</li>`).join("")}</ul>` : ""}
     </div>
   `;
+  const attribution = $("#portfolio-attribution");
+  attribution.classList.remove("hidden");
+  const contributionRows = (risk.returnContributions || []).slice(0, 6);
+  const industryRows = (risk.industries || []).slice(0, 5);
+  $("#portfolio-contributions").innerHTML = contributionRows.length
+    ? `<div class="portfolio-contribution-group"><b>个股区间贡献</b>${contributionRows.map((item) => `
+        <div class="portfolio-contribution-row">
+          <span>${escapeHTML(item.name)} · 权重 ${plainPercent(item.weight, true)} · 当前浮盈亏 ${compactMoney(item.currentPnl)}</span>
+          <strong class="${directionClass(item.contribution)}">${plainPercent(item.contribution, true)}</strong>
+        </div>
+      `).join("")}</div><div class="portfolio-contribution-group"><b>行业区间贡献</b>${industryRows.map((item) => `
+        <div class="portfolio-contribution-row">
+          <span>${escapeHTML(item.name)} · 权重 ${plainPercent(item.weight, true)} · 当前浮盈亏 ${compactMoney(item.currentPnl)}</span>
+          <strong class="${directionClass(item.returnContribution)}">${plainPercent(item.returnContribution, true)}</strong>
+        </div>
+      `).join("")}</div>`
+    : '<span class="muted">共同交易日样本不足</span>';
+  requestAnimationFrame(() => drawLineChart(
+    $("#portfolio-equity-chart"),
+    (risk.equityCurve || []).map((point) => ({ date: point.date, value: point.value * 100 })),
+    { color: "#2e6de6", fill: "rgba(46,109,230,0.14)" }
+  ));
   $("#portfolio-risk-caption").textContent =
     `按近120个交易日估算 · ${risk.positionCount}/${state.holdings.length} 只完成计算`;
 }
@@ -3593,7 +3740,7 @@ async function updatePortfolioRisk() {
     Promise.allSettled(
       missingHistories.map(async (holding) => ({
         code: holding.code,
-        bars: await window.hengce.klines(holding.code, 130)
+        bars: (await window.hengce.klines(holding.code, 121)).slice(-121)
       }))
     ),
     Promise.allSettled(
@@ -3670,7 +3817,7 @@ function renderHoldings() {
       const pnl = quote ? (quote.price - holding.cost) * holding.shares : null;
       const recovery = quote ? holding.cost / quote.price - 1 : null;
       return `
-        <tr>
+        <tr class="holding-row" data-code="${holding.code}" tabindex="0">
           <td>
             <div class="stock-cell">
               <strong>${escapeHTML(holding.name || holding.code)}</strong>
@@ -3793,6 +3940,32 @@ function populateSettings() {
   });
 }
 
+function populateAlertSettings() {
+  const preferences = state.alertPreferences;
+  $("#alerts-enabled").checked = preferences.enabled;
+  $("#alert-minimum-importance").value = String(preferences.minimumImportance);
+  $("#alert-portfolio-only").value = String(preferences.portfolioOnly);
+  $("#alert-keywords").value = preferences.keywords.join("，");
+  $("#alert-quiet-start").value = preferences.quietStart;
+  $("#alert-quiet-end").value = preferences.quietEnd;
+  $("#alert-settings-status").textContent = preferences.enabled
+    ? `重要度 ≥ ${preferences.minimumImportance} · ${preferences.portfolioOnly ? "持仓/观察相关优先" : "全部匹配事件"} · 静默 ${preferences.quietStart}–${preferences.quietEnd}`
+    : "情报系统继续更新，但不会发送桌面通知。";
+}
+
+function saveAlertPreferences() {
+  state.alertPreferences = normalizeAlertPreferences({
+    enabled: $("#alerts-enabled").checked,
+    minimumImportance: Number($("#alert-minimum-importance").value),
+    portfolioOnly: $("#alert-portfolio-only").value === "true",
+    keywords: $("#alert-keywords").value,
+    quietStart: $("#alert-quiet-start").value,
+    quietEnd: $("#alert-quiet-end").value
+  });
+  writeJSON("hengce.alertPreferences.v1", state.alertPreferences);
+  populateAlertSettings();
+}
+
 function restoreUiControls() {
   $("#stock-code").value = state.code;
   $("#recommendation-market").value = state.recommendationFilters.market;
@@ -3805,6 +3978,7 @@ function restoreUiControls() {
   $("#intelligence-phase").value = state.intelligenceFilters.phase;
   $("#intelligence-importance").value = state.intelligenceFilters.importance;
   $("#intelligence-sentiment").value = state.intelligenceFilters.sentiment;
+  $("#intelligence-search").value = state.intelligenceFilters.search;
   $$('[data-hotspot-mode]').forEach((button) =>
     button.classList.toggle("active", button.dataset.hotspotMode === state.hotspotMode)
   );
@@ -4052,6 +4226,7 @@ function renderAiPage() {
     state.aiReportModel = latest?.model || "";
   }
   renderAiConfig();
+  renderAssistant();
   $("#ai-error").textContent = state.aiError;
   $("#ai-error").classList.toggle("hidden", !state.aiError);
   $("#ai-loading").classList.toggle("hidden", !state.aiLoading);
@@ -4103,6 +4278,115 @@ async function generateAiTracking() {
   } finally {
     state.aiLoading = false;
     renderAiPage();
+  }
+}
+
+function assistantContext(facts, report) {
+  return compactAiFacts({
+    stockFacts: facts,
+    stockReport: report,
+    portfolioRisk: state.portfolioRisk,
+    holdings: state.holdings,
+    intelligence: state.intelligence ? {
+      asOf: state.intelligence.asOf,
+      themes: (state.intelligence.themes || []).slice(0, 8),
+      events: (state.intelligence.events || []).slice(0, 12).map((event) => ({
+        title: event.title,
+        summary: event.summary,
+        source: event.source,
+        publishedAt: event.publishedAt,
+        importance: event.importance,
+        theme: event.theme,
+        sentiment: event.sentiment
+      })),
+      sourceStatus: state.intelligence.sourceStatus
+    } : null,
+    macro: state.macro ? {
+      asOf: state.macro.asOf,
+      indicators: state.macro.indicators.map((item) => ({
+        shortLabel: item.shortLabel,
+        value: item.value,
+        unit: item.unit,
+        date: item.date,
+        signal: item.signal,
+        originalSource: item.originalSource
+      }))
+    } : null
+  });
+}
+
+function renderAssistant() {
+  $("#assistant-mode").textContent = state.aiConfig?.hasApiKey
+    ? `AI · ${state.aiConfig.model}`
+    : "本地规则";
+  $("#assistant-loading").classList.toggle("hidden", !state.assistantLoading);
+  $("#ask-assistant").disabled = state.assistantLoading;
+  const container = $("#assistant-answer");
+  const entry = state.assistantAnswer?.code === state.aiTargetCode
+    ? state.assistantAnswer
+    : state.assistantHistory.find((item) => item.code === state.aiTargetCode) || null;
+  if (!entry?.answer) {
+    container.className = "assistant-answer empty";
+    container.innerHTML = "<span>输入问题后生成分视角、可验证的回答</span>";
+    return;
+  }
+  const answer = entry.answer;
+  container.className = "assistant-answer";
+  container.innerHTML = `
+    <strong>${escapeHTML(entry.source === "ai" ? `AI回答 · ${entry.model}` : "本地上下文回答")}</strong>
+    <p>${escapeHTML(answer.summary)}</p>
+    <div class="assistant-perspectives">
+      ${(answer.perspectives || []).map((item) => `
+        <article><h3>${escapeHTML(item.role)}</h3><p>${escapeHTML(item.conclusion)}</p>${item.evidence?.length ? `<ul>${item.evidence.map((evidence) => `<li>${escapeHTML(evidence)}</li>`).join("")}</ul>` : ""}</article>
+      `).join("")}
+      <article><h3>风险</h3>${answer.risks?.length ? `<ul>${answer.risks.map((item) => `<li>${escapeHTML(item)}</li>`).join("")}</ul>` : '<p class="muted">暂无新增风险结论</p>'}</article>
+      <article><h3>下一步验证</h3>${answer.nextChecks?.length ? `<ul>${answer.nextChecks.map((item) => `<li>${escapeHTML(item)}</li>`).join("")}</ul>` : '<p class="muted">等待更多数据</p>'}</article>
+    </div>
+    <footer>问题：${escapeHTML(entry.question)} · 来源：${(answer.sourceLabels || []).map(escapeHTML).join("、") || "当前已加载事实"} · ${new Date(entry.createdAt).toLocaleString("zh-CN")}</footer>
+  `;
+}
+
+async function askContextAssistant() {
+  const question = $("#assistant-question").value.trim();
+  if (question.length < 2) {
+    showToast("请输入需要分析的问题");
+    return;
+  }
+  state.assistantLoading = true;
+  renderAssistant();
+  try {
+    const code = state.aiTargetCode || state.code;
+    const facts = state.aiFacts?.code === code
+      ? state.aiFacts
+      : await buildAiFacts(code);
+    const report = state.aiReport && state.aiFacts?.code === code
+      ? state.aiReport
+      : buildLocalTrackingReport(facts, latestAiSnapshot(code));
+    if (state.holdings.length && !state.portfolioRisk) await updatePortfolioRisk();
+    const context = assistantContext(facts, report);
+    let answer = localContextAnswer(question, context);
+    let source = "local";
+    let model = "";
+    if (state.aiConfig?.hasApiKey) {
+      try {
+        const result = await window.hengce.askAssistant({ question, context });
+        answer = result.answer;
+        source = result.source;
+        model = result.model;
+      } catch (error) {
+        showToast(`AI未完成，已保留本地回答：${aiErrorMessage(error)}`);
+      }
+    }
+    const entry = { code, question, answer, source, model, createdAt: new Date().toISOString() };
+    state.assistantAnswer = entry;
+    state.assistantHistory.unshift(entry);
+    state.assistantHistory = state.assistantHistory.slice(0, 20);
+    writeJSON("hengce.aiAssistant.v1", state.assistantHistory);
+  } catch (error) {
+    showToast(`问答失败：${aiErrorMessage(error)}`);
+  } finally {
+    state.assistantLoading = false;
+    renderAssistant();
   }
 }
 
@@ -4264,7 +4548,10 @@ function switchView(view) {
   if (view === "backtest") ensureBacktestHistory();
   if (view === "hotspots") loadHotspots();
   if (view === "intelligence") loadIntelligence();
-  if (view === "compass") loadCompass();
+  if (view === "compass") {
+    loadCompass();
+    loadMacro();
+  }
   if (view === "recommendations") loadRecommendations();
   if (view === "overnight") {
     loadOvernight();
@@ -4303,8 +4590,17 @@ function bindEvents() {
       renderIntelligence();
     })
   );
+  $("#intelligence-search").addEventListener("input", (event) => {
+    state.intelligenceFilters.search = event.currentTarget.value.slice(0, 80);
+    saveUiState();
+    renderIntelligence();
+  });
   $("#refresh-compass").addEventListener("click", () =>
-    loadCompass({ force: true })
+    Promise.all([loadCompass({ force: true }), loadMacro({ force: true })])
+  );
+  $("#refresh-macro").addEventListener("click", () => loadMacro({ force: true }));
+  $("#open-social-financing").addEventListener("click", () =>
+    window.hengce.openExternal("https://www.pbc.gov.cn/diaochatongjisi/116219/116319/index.html")
   );
   $("#refresh-recommendations").addEventListener("click", () =>
     loadRecommendations({ force: true })
@@ -4328,11 +4624,22 @@ function bindEvents() {
     loadWatchlist({ force: true })
   );
   $("#run-ai-tracking").addEventListener("click", generateAiTracking);
+  $("#ask-assistant").addEventListener("click", askContextAssistant);
+  $("#assistant-question").addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") askContextAssistant();
+  });
+  $$("[data-assistant-prompt]").forEach((button) =>
+    button.addEventListener("click", () => {
+      $("#assistant-question").value = button.dataset.assistantPrompt;
+      askContextAssistant();
+    })
+  );
   $("#ai-target").addEventListener("change", (event) => {
     state.aiTargetCode = event.currentTarget.value;
     state.aiFacts = null;
     state.aiReport = null;
     state.aiError = "";
+    state.assistantAnswer = state.assistantHistory.find((item) => item.code === state.aiTargetCode) || null;
     saveUiState();
     renderAiPage();
   });
@@ -4439,6 +4746,9 @@ function bindEvents() {
   });
   $("#refresh-trading-calendar").addEventListener("click", () =>
     loadTradingCalendar({ force: true })
+  );
+  ["#alerts-enabled", "#alert-minimum-importance", "#alert-portfolio-only", "#alert-keywords", "#alert-quiet-start", "#alert-quiet-end"].forEach((selector) =>
+    $(selector).addEventListener("change", saveAlertPreferences)
   );
   $("#save-ai-settings").addEventListener("click", saveAiConfiguration);
   $("#test-ai-connection").addEventListener("click", testAiConfiguration);
@@ -4591,6 +4901,13 @@ function bindEvents() {
     ) {
       requestAnimationFrame(renderBacktest);
     }
+    if (
+      entries.some((entry) => entry.target.contains($("#portfolio-equity-chart"))) &&
+      $("#holdings-view").classList.contains("active") &&
+      state.portfolioRisk
+    ) {
+      requestAnimationFrame(renderPortfolioRisk);
+    }
   });
   $$(".chart-wrap").forEach((wrapper) => chartResizeObserver.observe(wrapper));
 }
@@ -4600,6 +4917,7 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
   if (state.appearanceTheme === "system") applyThemePreference("system", { persist: false });
 });
 populateSettings();
+populateAlertSettings();
 restoreUiControls();
 bindEvents();
 window.hengce.setWindowPreferences(state.windowPreferences).catch(() => {});

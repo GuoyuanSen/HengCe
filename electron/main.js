@@ -77,6 +77,13 @@ const {
   eventInterpretationInstructions,
   normalizeEventInterpretation
 } = require("../src/intelligence.js");
+const { MACRO_SERIES, buildMacroSnapshot } = require("./macro.js");
+const {
+  CONTEXT_ANSWER_SCHEMA,
+  contextAssistantInput,
+  contextAssistantInstructions,
+  normalizeContextAnswer
+} = require("../src/research_assistant.js");
 const {
   calendarCoverage,
   marketParts,
@@ -1086,6 +1093,33 @@ async function fetchMarketIntelligence(options = {}) {
   return attachMarketConfirmation(snapshot, hotspots);
 }
 
+async function fetchMacroData() {
+  const reportNames = [...new Set(MACRO_SERIES.map((item) => item.reportName))];
+  const settled = await Promise.allSettled(reportNames.map(async (reportName) => {
+    const params = new URLSearchParams({
+      reportName,
+      columns: "ALL",
+      sortColumns: reportName === "RPTA_WEB_RATE" ? "TRADE_DATE" : reportName === "RPT_IMP_INTRESTRATEN" ? "REPORT_DATE,INDICATOR_ID" : "REPORT_DATE",
+      sortTypes: reportName === "RPT_IMP_INTRESTRATEN" ? "-1,1" : "-1",
+      pageSize: reportName === "RPT_IMP_INTRESTRATEN" ? "80" : "24",
+      pageNumber: "1"
+    });
+    const payload = await requestJSON(
+      `https://datacenter-web.eastmoney.com/api/data/v1/get?${params}`,
+      { headers: { Referer: "https://data.eastmoney.com/" }, timeoutMs: 8000 }
+    );
+    if (!payload?.success || !Array.isArray(payload?.result?.data)) {
+      throw new Error(`宏观数据 ${reportName} 暂不可用`);
+    }
+    return [reportName, payload];
+  }));
+  const payloads = Object.fromEntries(
+    settled.filter((item) => item.status === "fulfilled").map((item) => item.value)
+  );
+  if (!Object.keys(payloads).length) throw new Error(FRIENDLY_MARKET_ERROR);
+  return buildMacroSnapshot(payloads);
+}
+
 function aiSettingsPath() {
   return path.join(app.getPath("userData"), "ai-settings.json");
 }
@@ -1175,9 +1209,9 @@ function sanitizedAiPayload(payload, includePosition) {
   return clone;
 }
 
-async function postAiResponse(settings, apiKey, body) {
+async function postAiResponse(settings, apiKey, body, timeoutMs = 45000) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 45000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await net.fetch(responsesUrl(settings.baseUrl), {
       method: "POST",
@@ -1288,6 +1322,62 @@ async function runAiIntelligence(value = {}) {
     source: "ai",
     model: settings.model,
     report: normalizeEventInterpretation(parseJsonResponse(response))
+  };
+}
+
+async function runAiContextAssistant(value = {}) {
+  const record = readAiSettingsRecord();
+  const settings = normalizeAiSettings(record.settings || DEFAULT_AI_SETTINGS);
+  const apiKey = readAiApiKey(record);
+  if (!apiKey) throw new Error("尚未配置 API Key，可先使用本地上下文回答");
+  const clean = JSON.parse(JSON.stringify(value || {}));
+  if (!settings.sendHoldings) {
+    delete clean.context?.holdings;
+    delete clean.context?.portfolioRisk?.positions;
+    delete clean.context?.portfolioRisk?.returnContributions;
+    delete clean.context?.portfolioRisk?.equityCurve;
+    delete clean.context?.portfolioRisk?.totalValue;
+    delete clean.context?.portfolioRisk?.totalCurrentPnl;
+    if (Array.isArray(clean.context?.portfolioRisk?.industries)) {
+      clean.context.portfolioRisk.industries = clean.context.portfolioRisk.industries.map((item) => ({
+        name: item.name,
+        weight: item.weight,
+        returnContribution: item.returnContribution
+      }));
+    }
+    if (clean.context?.stockFacts) delete clean.context.stockFacts.position;
+  }
+  const question = String(clean.question || "").trim();
+  if (question.length < 2 || question.length > 600) throw new Error("请输入2至600字的问题");
+  if (JSON.stringify(clean).length > 60000) throw new Error("问答事实包过大，请减少上下文后重试");
+  const response = await postAiResponse(settings, apiKey, {
+    model: settings.model,
+    store: false,
+    max_output_tokens: 1800,
+    instructions: contextAssistantInstructions(),
+    input: contextAssistantInput(question, clean.context || {}),
+    text: {
+      format: {
+        type: "json_schema",
+        name: "hengce_context_answer",
+        strict: true,
+        schema: CONTEXT_ANSWER_SCHEMA
+      }
+    }
+  });
+  const answer = normalizeContextAnswer(parseJsonResponse(response));
+  const allowedSources = new Set([
+    ...(clean.context?.stockFacts?.sources || []),
+    clean.context?.stockFacts?.quote?.source,
+    ...(clean.context?.intelligence?.events || []).map((item) => item.source),
+    ...(clean.context?.macro?.indicators || []).flatMap((item) => [item.originalSource, item.aggregator])
+  ].map((item) => String(item || "").trim()).filter(Boolean));
+  answer.sourceLabels = answer.sourceLabels.filter((item) => allowedSources.has(item));
+  if (!answer.sourceLabels.length) answer.sourceLabels = [...allowedSources].slice(0, 8);
+  return {
+    source: "ai",
+    model: settings.model,
+    answer
   };
 }
 
@@ -1633,6 +1723,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   ipcMain.handle("market:intelligence", (_, options = {}) =>
     fetchMarketIntelligence(options)
   );
+  ipcMain.handle("market:macro", (_, options = {}) =>
+    cachedRequest("macro-data", 6 * 3600000, fetchMacroData, options.force)
+  );
   ipcMain.handle("system:notify", (_, title, body) => {
     if (!Notification.isSupported()) return false;
     new Notification({ title: String(title), body: String(body) }).show();
@@ -1662,6 +1755,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   ipcMain.handle("ai:test", () => testAiConnection());
   ipcMain.handle("ai:track", (_, payload = {}) => runAiTracking(payload));
   ipcMain.handle("ai:intelligence", (_, payload = {}) => runAiIntelligence(payload));
+  ipcMain.handle("ai:assistant", (_, payload = {}) => runAiContextAssistant(payload));
 
   createWindow();
   syncTradingCalendar().catch(() => {});

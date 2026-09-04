@@ -26,8 +26,8 @@ test("correlation identifies matching and opposite series", () => {
 
 test("portfolio risk calculates weights, volatility, and industry exposure", () => {
   const holdings = [
-    { code: "600001", name: "甲", shares: 1000 },
-    { code: "000001", name: "乙", shares: 500 }
+    { code: "600001", name: "甲", shares: 1000, cost: 8 },
+    { code: "000001", name: "乙", shares: 500, cost: 18 }
   ];
   const quotes = new Map([
     ["600001", { price: 10 }],
@@ -47,4 +47,21 @@ test("portfolio risk calculates weights, volatility, and industry exposure", () 
   assert.ok(risk.annualizedVolatility > 0);
   assert.equal(risk.industries.length, 2);
   assert.equal(risk.industries[0].weight, 0.5);
+  assert.equal(risk.equityCurve.length, 39);
+  assert.ok(risk.totalReturn > 0);
+  assert.ok(risk.maxDrawdown >= 0);
+  assert.equal(risk.returnContributions.length, 2);
+  assert.equal(risk.totalCurrentPnl, 3000);
+});
+
+test("portfolio proxy remains unavailable when histories are missing", () => {
+  const risk = buildPortfolioRisk(
+    [{ code: "600001", shares: 100, cost: 9 }],
+    new Map([["600001", { price: 10 }]]),
+    new Map(),
+    new Map()
+  );
+  assert.equal(risk.totalReturn, null);
+  assert.equal(risk.maxDrawdown, null);
+  assert.deepEqual(risk.equityCurve, []);
 });

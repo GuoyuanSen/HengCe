@@ -122,6 +122,15 @@ async function main() {
   }
 
   const infoPlist = path.join(packagedApp, "Contents", "Info.plist");
+  const packagedIcon = path.join(packagedApp, "Contents", "Resources", "AppIcon.icns");
+  fs.copyFileSync(iconFile, packagedIcon);
+  run("/usr/bin/plutil", [
+    "-replace",
+    "CFBundleIconFile",
+    "-string",
+    "AppIcon.icns",
+    infoPlist
+  ]);
   [
     "NSAudioCaptureUsageDescription",
     "NSBluetoothAlwaysUsageDescription",

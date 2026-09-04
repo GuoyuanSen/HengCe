@@ -9,6 +9,7 @@ const renderer = fs.readFileSync(path.join(root, "src", "renderer.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "src", "styles.css"), "utf8");
 const preload = fs.readFileSync(path.join(root, "electron", "preload.js"), "utf8");
 const main = fs.readFileSync(path.join(root, "electron", "main.js"), "utf8");
+const macro = fs.readFileSync(path.join(root, "electron", "macro.js"), "utf8");
 
 test("stock code input stays outside the draggable titlebar", () => {
   assert.match(
@@ -100,7 +101,7 @@ test("market intelligence combines public events, lifecycle, holdings impact and
   assert.match(renderer, /scheduleIntelligenceRefresh/);
   assert.match(renderer, /hengce\.intelligence\.snapshot\.v1/);
   assert.match(renderer, /当前显示最近一次成功快照/);
-  assert.match(renderer, /衡策持仓情报/);
+  assert.match(renderer, /衡策情报提醒/);
   assert.match(renderer, /hengce\.intelligence\.bookmarks\.v1/);
   assert.match(styles, /\.lifecycle-phase\.warming/);
 });
@@ -114,9 +115,21 @@ test("market compass is a standalone lazy-loaded global and domestic view", () =
   assert.match(main, /RPT_INDEX_TS_COMPONENT/);
   assert.match(renderer, /style-representatives/);
   assert.match(renderer, /代表成分按公开指数权重或流通规模展示/);
-  assert.match(renderer, /if \(view === "compass"\) loadCompass\(\)/);
+  assert.match(renderer, /if \(view === "compass"\) \{[\s\S]*?loadCompass\(\);[\s\S]*?loadMacro\(\);/);
   assert.match(renderer, /window\.hengce\.compass\(\{ force \}\)/);
   assert.match(renderer, /风向标描述市场环境/);
+});
+
+test("macro data center exposes period, provenance and partial-data handling", () => {
+  assert.match(html, /id="macro-indicators"/);
+  assert.match(html, /央行社融原表/);
+  assert.match(html, /CPI、PPI、PMI、M1\/M2、LPR 与 Shibor/);
+  assert.match(preload, /macro:\s*\(options/);
+  assert.match(main, /ipcMain\.handle\("market:macro"/);
+  assert.match(macro, /RPT_ECONOMY_CPI/);
+  assert.match(renderer, /function renderMacro/);
+  assert.match(renderer, /原始发布/);
+  assert.match(renderer, /pbc\.gov\.cn\/diaochatongjisi/);
 });
 
 test("hotspot boards expand inline and stocks open the analysis view", () => {
@@ -190,6 +203,14 @@ test("watchlist alerts and portfolio risk are connected to live market data", ()
   assert.match(renderer, /function updatePortfolioRisk/);
 });
 
+test("portfolio risk includes a proxy curve and contribution attribution", () => {
+  assert.match(html, /id="portfolio-equity-chart"/);
+  assert.match(html, /id="portfolio-contributions"/);
+  assert.match(renderer, /区间收益代理/);
+  assert.match(renderer, /returnContributions/);
+  assert.match(renderer, /class="holding-row"/);
+});
+
 test("AI tracking uses encrypted main-process settings and keeps a local fallback", () => {
   assert.match(html, /data-view="ai"/);
   assert.match(html, /id="ai-view"/);
@@ -206,6 +227,27 @@ test("AI tracking uses encrypted main-process settings and keeps a local fallbac
   assert.match(renderer, /hengce\.aiTracking\.v1/);
   assert.match(renderer, /AI 解释未完成[\s\S]*已保留本地量化摘要/);
   assert.doesNotMatch(renderer, /localStorage\.setItem\([^\n]*apiKey/i);
+});
+
+test("AI workspace includes contextual questions with verified source labels", () => {
+  assert.match(html, /id="assistant-question"/);
+  assert.match(preload, /askAssistant:\s*\(payload\)/);
+  assert.match(main, /ipcMain\.handle\("ai:assistant"/);
+  assert.match(main, /store:\s*false/);
+  assert.match(main, /allowedSources/);
+  assert.match(main, /delete clean\.context\?\.portfolioRisk\?\.totalValue/);
+  assert.match(renderer, /localContextAnswer/);
+  assert.doesNotMatch(main, /research:select-file|file_data/);
+});
+
+test("intelligence reminders support search, keywords and quiet hours", () => {
+  assert.match(html, /id="intelligence-search"/);
+  assert.match(html, /id="alerts-enabled"/);
+  assert.match(html, /id="alert-keywords"/);
+  assert.match(html, /id="alert-quiet-start"/);
+  assert.match(renderer, /hengce\.alertPreferences\.v1/);
+  assert.match(renderer, /selectAlertEvent/);
+  assert.match(renderer, /衡策情报提醒/);
 });
 
 test("market views expose provenance and stale-data protection", () => {

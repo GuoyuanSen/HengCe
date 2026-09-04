@@ -52,7 +52,13 @@
           code: holding.code,
           name: holding.name || quote?.name || holding.code,
           industry: profile.industry || "未分类",
+          shares: Number(holding.shares || 0),
+          cost: Number(holding.cost || 0),
           value: quote?.price > 0 ? quote.price * holding.shares : 0,
+          costValue: holding.cost > 0 ? holding.cost * holding.shares : 0,
+          currentPnl: quote?.price > 0 && holding.cost > 0
+            ? (quote.price - holding.cost) * holding.shares
+            : null,
           returns: dailyReturns(bars)
         };
       })
@@ -72,6 +78,15 @@
         0
       )
     );
+    let equity = 1;
+    let peak = 1;
+    let maxDrawdown = 0;
+    const equityCurve = commonDates.map((date, index) => {
+      equity *= 1 + portfolioReturns[index];
+      peak = Math.max(peak, equity);
+      maxDrawdown = Math.max(maxDrawdown, peak > 0 ? 1 - equity / peak : 0);
+      return { date, value: equity };
+    });
     const mean = average(portfolioReturns);
     const variance = portfolioReturns.length > 1
       ? portfolioReturns.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
@@ -95,12 +110,49 @@
     );
     const industries = new Map();
     positions.forEach((position) => {
-      industries.set(
-        position.industry,
-        (industries.get(position.industry) || 0) + position.weight
-      );
+      const current = industries.get(position.industry) || {
+        name: position.industry,
+        weight: 0,
+        value: 0,
+        currentPnl: 0
+      };
+      current.weight += position.weight;
+      current.value += position.value;
+      current.currentPnl += Number(position.currentPnl || 0);
+      industries.set(position.industry, current);
     });
+    positions.forEach((position) => {
+      const periodReturn = commonDates.reduce(
+        (value, date) => value * (1 + position.returns.get(date)),
+        1
+      ) - 1;
+      position.periodReturn = periodReturn;
+      position.returnContribution = position.weight * periodReturn;
+      const industry = industries.get(position.industry);
+      industry.returnContribution = Number(industry.returnContribution || 0) + position.returnContribution;
+    });
+    const totalCurrentPnl = positions.reduce(
+      (sum, position) => sum + Number(position.currentPnl || 0),
+      0
+    );
+    const returnContributions = positions
+      .map((position) => ({
+        code: position.code,
+        name: position.name,
+        industry: position.industry,
+        weight: position.weight,
+        periodReturn: position.periodReturn,
+        contribution: position.returnContribution,
+        currentPnl: position.currentPnl,
+        pnlShare: totalCurrentPnl === 0 || position.currentPnl == null
+          ? null
+          : position.currentPnl / Math.abs(totalCurrentPnl)
+      }))
+      .sort((left, right) => right.contribution - left.contribution);
     const maxWeight = Math.max(0, ...positions.map((position) => position.weight));
+    const industryRows = [...industries.values()]
+      .sort((left, right) => right.weight - left.weight);
+    const maxIndustryWeight = industryRows[0]?.weight || 0;
     const riskLevel =
       annualizedVolatility == null
         ? "等待数据"
@@ -115,14 +167,24 @@
       annualizedVolatility,
       averageCorrelation: correlations.length ? average(correlations) : null,
       maxWeight,
+      maxIndustryWeight,
+      totalReturn: commonDates.length ? equity - 1 : null,
+      maxDrawdown: commonDates.length ? maxDrawdown : null,
+      equityCurve,
+      totalCurrentPnl,
+      returnContributions,
       diversificationScore: positions.length > 1
         ? Math.round((1 - concentration) * 100)
         : 0,
       riskLevel,
       sampleDays: commonDates.length,
-      industries: [...industries.entries()]
-        .map(([name, weight]) => ({ name, weight }))
-        .sort((left, right) => right.weight - left.weight),
+      industries: industryRows,
+      riskAlerts: [
+        maxWeight > 0.4 ? "单只股票权重超过40%" : null,
+        maxIndustryWeight > 0.55 ? "单一行业权重超过55%" : null,
+        annualizedVolatility != null && annualizedVolatility > 0.4 ? "组合历史波动偏高" : null,
+        commonDates.length && maxDrawdown > 0.18 ? "近120日代理回撤超过18%" : null
+      ].filter(Boolean),
       positions
     };
   }

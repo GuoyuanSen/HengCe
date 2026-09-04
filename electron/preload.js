@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld("hengce", {
   profile: (code, options = {}) => ipcRenderer.invoke("market:profile", code, options),
   announcements: (code, options = {}) => ipcRenderer.invoke("market:announcements", code, options),
   intelligence: (options = {}) => ipcRenderer.invoke("market:intelligence", options),
+  macro: (options = {}) => ipcRenderer.invoke("market:macro", options),
   notify: (title, body) => ipcRenderer.invoke("system:notify", title, body),
   openExternal: (url) => ipcRenderer.invoke("system:open-external", url),
   checkForUpdate: () => ipcRenderer.invoke("system:update-check"),
@@ -32,6 +33,7 @@ contextBridge.exposeInMainWorld("hengce", {
   testAi: () => ipcRenderer.invoke("ai:test"),
   trackWithAi: (payload) => ipcRenderer.invoke("ai:track", payload),
   interpretEvent: (payload) => ipcRenderer.invoke("ai:intelligence", payload),
+  askAssistant: (payload) => ipcRenderer.invoke("ai:assistant", payload),
   onWindowPreferences: (callback) => {
     const listener = (_event, preferences) => callback(preferences);
     ipcRenderer.on("system:window-preferences", listener);
