@@ -27,6 +27,12 @@ jobs:
       - name: Smoke-test packaged application
         run: |
           export HENGCE_CAPTURE_PATH="$PWD/dist/HengCe-Apple-Silicon-Smoke.png"
+          export HENGCE_CAPTURE_THEME="light"
+          "dist/衡策.app/Contents/MacOS/衡策"
+          test -s "$HENGCE_CAPTURE_PATH"
+          export HENGCE_CAPTURE_PATH="$PWD/dist/HengCe-Apple-Silicon-Dark-Smoke.png"
+          export HENGCE_CAPTURE_THEME="dark"
+          export HENGCE_CAPTURE_VIEW="settings"
           "dist/衡策.app/Contents/MacOS/衡策"
           test -s "$HENGCE_CAPTURE_PATH"
       - uses: actions/upload-artifact@v4
@@ -39,7 +45,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: HengCe-smoke-macOS-Apple-Silicon
-          path: dist/HengCe-Apple-Silicon-Smoke.png
+          path: |
+            dist/HengCe-Apple-Silicon-Smoke.png
+            dist/HengCe-Apple-Silicon-Dark-Smoke.png
           if-no-files-found: error
           retention-days: 3
 
@@ -65,6 +73,7 @@ jobs:
           $capture = Join-Path $PWD "dist\HengCe-Windows-x64-Smoke.png"
           $traySmoke = Join-Path $PWD "dist\HengCe-Windows-x64-Tray-Smoke.json"
           $env:HENGCE_CAPTURE_PATH = $capture
+          $env:HENGCE_CAPTURE_THEME = "dark"
           $env:HENGCE_TRAY_SMOKE_PATH = $traySmoke
           $process = Start-Process -FilePath "build\windows\package\HengCe-win32-x64\HengCe.exe" -PassThru
           if (-not $process.WaitForExit(45000)) { $process.Kill(); throw "Smoke test timed out" }

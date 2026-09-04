@@ -16,13 +16,17 @@ test("observation plan exposes pullback, breakout, valuation cap and invalidatio
   const plan = buildObservationPlan({
     quote: { price: 10 },
     model,
-    valuation: { applicable: true, fairRange: { base: 10.6 }, confidence: { score: 80, label: "较高" } }
+    valuation: { applicable: true, fairRange: { base: 10.6 }, confidence: { score: 80, label: "较高" } },
+    settings: { initialCapital: 100000, riskPerTradePercent: 1, maxPositionPercent: 20 }
   });
   assert.equal(plan.available, true);
   assert.ok(plan.pullbackRange.low < plan.pullbackRange.high);
   assert.ok(plan.breakout > model.pressure);
   assert.equal(plan.valuationCap, 10.6);
   assert.equal(plan.invalidation, 9.4);
+  assert.ok(plan.riskPlan.suggestedShares >= 100);
+  assert.ok(plan.riskPlan.capitalAtRisk <= plan.riskPlan.riskBudget);
+  assert.ok(plan.riskPlan.positionPercent <= 0.2);
 });
 
 test("weak or invalidated structures do not produce an observation range", () => {

@@ -486,6 +486,14 @@ const {
   setPrimaryHolding
 } = window.HengCePreferences;
 const { buildObservationPlan } = window.HengCeTradePlan;
+const { marketParts, nextTradingDateKey, tradingDayStatus } = window.HengCeTradingCalendar;
+const {
+  checkpointFor,
+  expireMissedRecords,
+  journalStats,
+  settleForwardRecords,
+  upsertForwardRecord
+} = window.HengCeOvernightJournal;
 const { buildLocalTrackingReport, trackingTargets } = window.HengCeAiTracking;
 const {
   answerIntelligenceQuestion,
@@ -501,6 +509,9 @@ const DEFAULT_SETTINGS = {
   commissionRate: 0.00025,
   stampDutyRate: 0.0005,
   slippageRate: 0.0005,
+  riskPerTradePercent: 0.75,
+  maxPositionPercent: 25,
+  maxDailyParticipationPercent: 1,
   fastPeriod: 10,
   slowPeriod: 30,
   breakoutPeriod: 20,
@@ -513,7 +524,9 @@ const storedUi = readJSON("hengce.ui.v1", {});
 const storedDefaultCode = normalizeCode(readJSON("hengce.defaultStock.v1", null));
 const storedLastCode = normalizeCode(readJSON("hengce.lastStock.v1", null));
 const storedOvernightStreaks = readJSON("hengce.overnight.streaks.v1", null);
+const storedOvernightJournal = readJSON("hengce.overnight.forward.v1", []);
 const storedWindowPreferences = readJSON("hengce.windowPreferences.v1", {});
+const storedAppearance = readJSON("hengce.appearance.v1", {});
 const storedAiSnapshots = readJSON("hengce.aiTracking.v1", []);
 const storedIntelligenceHistory = readJSON("hengce.intelligence.history.v1", []);
 const storedIntelligenceSeen = readJSON("hengce.intelligence.seen.v1", []);
@@ -525,6 +538,7 @@ const storedOvernightMarketScope = OVERNIGHT_MARKET_SCOPES.includes(storedUi.ove
 const VIEW_NAMES = ["dashboard", "hotspots", "intelligence", "compass", "recommendations", "overnight", "watchlist", "ai", "backtest", "holdings", "settings"];
 const requestedView = new URLSearchParams(window.location.search).get("view");
 const requestedStock = normalizeCode(new URLSearchParams(window.location.search).get("stock"));
+const requestedTheme = new URLSearchParams(window.location.search).get("theme");
 const startupCodeCandidates = [...new Set([
   requestedStock,
   ...initialCodeCandidates({
@@ -593,6 +607,8 @@ const state = {
       ? Object.entries(storedOvernightStreaks.values || {}).map(([code, value]) => [code, Number(value) || 0])
       : []
   ),
+  overnightJournal: Array.isArray(storedOvernightJournal) ? storedOvernightJournal.slice(0, 180) : [],
+  overnightJournalSettling: false,
   recommendationFilters: {
     market: storedUi.recommendationFilters?.market || "all",
     industry: storedUi.recommendationFilters?.industry || "all",
@@ -628,6 +644,11 @@ const state = {
   windowPreferences: {
     minimizeToTray: storedWindowPreferences.minimizeToTray !== false
   },
+  appearanceTheme: ["light", "dark"].includes(requestedTheme)
+    ? requestedTheme
+    : ["system", "light", "dark"].includes(storedAppearance.theme)
+      ? storedAppearance.theme
+      : "system",
   aiConfig: null,
   aiConfigLoading: false,
   aiTargetCode: storedUi.aiTargetCode || startupCodeCandidates[0] || resolveInitialCode(),
@@ -663,6 +684,25 @@ function readJSON(key, fallback) {
 
 function writeJSON(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
+}
+
+function cssColor(variable, fallback) {
+  return getComputedStyle(document.documentElement).getPropertyValue(variable).trim() || fallback;
+}
+
+function applyThemePreference(preference, { persist = true } = {}) {
+  const normalized = ["system", "light", "dark"].includes(preference) ? preference : "system";
+  const dark = normalized === "dark" ||
+    (normalized === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+  state.appearanceTheme = normalized;
+  document.documentElement.dataset.themePreference = normalized;
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  if (persist) writeJSON("hengce.appearance.v1", { theme: normalized });
+  if ($("#theme-preference")) $("#theme-preference").value = normalized;
+  requestAnimationFrame(() => {
+    schedulePriceChart();
+    if (state.bars.length && state.quote) renderBacktest();
+  });
 }
 
 function saveUiState() {
@@ -1871,7 +1911,7 @@ function renderRecommendations() {
               <td>
                 <div class="validation-cell">
                   <strong>${item.validation?.fiveDay?.hitRate == null ? "样本不足" : `5日胜率 ${plainPercent(item.validation.fiveDay.hitRate, true)}`}</strong>
-                  <small>${item.validation?.twentyDay?.averageReturn == null ? "等待更多历史信号" : `20日均值 ${percent(item.validation.twentyDay.averageReturn, true)} · ${item.validation.twentyDay.sampleCount}次`}</small>
+                  <small title="${escapeHTML(item.validation?.limitations || "")}">${item.validation?.twentyDay?.averageReturn == null ? "等待更多非重叠历史信号" : `20日净值 ${percent(item.validation.twentyDay.averageReturn, true)} · 超额 ${percent(item.validation.twentyDay.averageExcessReturn, true)} · ${item.validation.twentyDay.sampleCount}次`}</small>
                 </div>
               </td>
               <td><span class="risk-pill risk-${item.risk === "较高" ? "high" : item.risk === "中等" ? "medium" : "low"}">${escapeHTML(item.risk)}</span></td>
@@ -1932,7 +1972,7 @@ function renderRecommendations() {
         minute: "2-digit"
       });
   $("#recommendations-note").textContent =
-    `数据时间 ${timestamp} · 候选池：${sourceStatus.candidateSource || "公开成交额榜"} · 历史：${sourceStatus.historySource || "公开前复权日线"}。榜单排除 ST、退市及极端波动标的；结果是量化观察池，不构成投资建议。`;
+    `数据时间 ${timestamp} · 候选池：${sourceStatus.candidateSource || "公开成交额榜"} · 历史：${sourceStatus.historySource || "公开前复权日线"}。历史验证使用当时可见量价、非重叠信号、交易成本和指数超额；历史PE按中性处理，候选仍存在当前活跃样本偏差。结果仅为量化观察池。`;
 }
 
 function watchAlert(item, data) {
@@ -2178,7 +2218,21 @@ function updateOvernightClock() {
 function scheduleOvernightRefresh() {
   clearTimeout(overnightRefreshTimer);
   overnightRefreshTimer = null;
-  const windowState = localOvernightWindow().state;
+  const localWindow = localOvernightWindow();
+  const windowState = localWindow.state;
+  if (windowState === "locked" && state.overnight) {
+    persistOvernightForwardSnapshot(state.overnight, "14:50");
+    if (state.overnight.window?.state !== "locked") {
+      state.overnight = { ...state.overnight, window: { ...localWindow, canScan: false } };
+      writeJSON("hengce.overnight.snapshot.v1", {
+        date: todayKey(),
+        marketScope: state.overnightMarketScope,
+        snapshot: state.overnight
+      });
+      queueMicrotask(renderOvernight);
+    }
+    return;
+  }
   if (!["waiting", "scanning"].includes(windowState)) return;
   if (windowState === "scanning" && !state.overnight && !state.overnightLoading && !state.overnightError) {
     loadOvernight({ force: true });
@@ -2191,17 +2245,120 @@ function scheduleOvernightRefresh() {
 }
 
 function localOvernightWindow(now = new Date()) {
-  const weekday = now.getDay();
-  const minutes = now.getHours() * 60 + now.getMinutes();
-  if (weekday === 0 || weekday === 6) return { state: "closed", label: "非交易日", locked: true };
-  if (minutes < 870) return { state: "waiting", label: "14:30 开始扫描", locked: false };
-  if (minutes < 890) return { state: "scanning", label: "动态扫描中", locked: false };
-  if (minutes < 900) return { state: "locked", label: "最终名单已锁定", locked: true };
-  return { state: "closed", label: "今日扫描已结束", locked: true };
+  const tradingDay = tradingDayStatus(now);
+  const minutes = tradingDay.hour * 60 + tradingDay.minute;
+  if (!tradingDay.isTradingDay) return { state: "closed", label: tradingDay.label, locked: true, nextTradingDate: nextTradingDateKey(now), calendarConfidence: tradingDay.confidence };
+  if (minutes < 870) return { state: "waiting", label: "14:30 开始扫描", locked: false, calendarConfidence: tradingDay.confidence };
+  if (minutes < 890) return { state: "scanning", label: "动态扫描中", locked: false, calendarConfidence: tradingDay.confidence };
+  if (minutes < 900) return { state: "locked", label: "最终名单已锁定", locked: true, calendarConfidence: tradingDay.confidence };
+  return { state: "closed", label: "今日扫描已结束", locked: true, nextTradingDate: nextTradingDateKey(now), calendarConfidence: tradingDay.confidence };
 }
 
 function todayKey(date = new Date()) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  return marketParts(date).dateKey;
+}
+
+function persistOvernightForwardSnapshot(snapshot, checkpointOverride = null) {
+  if (isBrowserPreview || !snapshot) return;
+  const capturedAt = new Date();
+  const parts = marketParts(capturedAt);
+  const checkpoint = checkpointOverride || checkpointFor(parts);
+  if (!checkpoint) return;
+  state.overnightJournal = upsertForwardRecord(state.overnightJournal, snapshot, {
+    checkpoint,
+    date: parts.dateKey,
+    nextTradingDate: nextTradingDateKey(capturedAt),
+    capturedAt: capturedAt.toISOString(),
+    marketScope: state.overnightMarketScope
+  });
+  writeJSON("hengce.overnight.forward.v1", state.overnightJournal);
+}
+
+function renderOvernightForwardJournal() {
+  const statsContainer = $("#overnight-forward-stats");
+  const body = $("#overnight-forward-body");
+  if (!statsContainer || !body) return;
+  const stats = journalStats(state.overnightJournal);
+  statsContainer.innerHTML = [
+    ["已存检查点", `${number(stats.checkpointCount, 0)} 个`, "含无信号日期"],
+    ["出现信号", `${number(stats.signalCheckpointCount, 0)} 次`, "不降低规则凑数"],
+    ["已验证样本", `${number(stats.sampleCount, 0)} 个`, "次日10:00固定核对"],
+    ["前向胜率", stats.hitRate == null ? "样本不足" : plainPercent(stats.hitRate, true), stats.averageReturn == null ? "等待真实样本" : `均值 ${percent(stats.averageReturn, true)} · 最差 ${percent(stats.worstReturn, true)}`]
+  ].map(([label, value, detail]) => `<div><span>${escapeHTML(label)}</span><strong>${escapeHTML(value)}</strong><small>${escapeHTML(detail)}</small></div>`).join("");
+  const labels = {
+    pending: "待次日核对",
+    settled: "已验证",
+    "no-signal": "无信号",
+    missed: "未采集"
+  };
+  const rows = state.overnightJournal.slice(0, 12);
+  body.innerHTML = rows.length
+    ? rows.map((record) => {
+        const candidates = record.candidates || [];
+        const outcomes = candidates.map((item) => item.outcome?.exit1000Return).filter(Number.isFinite);
+        const average = outcomes.length ? outcomes.reduce((sum, value) => sum + value, 0) / outcomes.length : null;
+        const names = candidates.slice(0, 4).map((item) => item.name).join("、");
+        return `<tr>
+          <td><strong>${escapeHTML(record.date)} ${escapeHTML(record.checkpoint)}</strong><small>${escapeHTML(record.marketScope === "main" ? "沪深主板" : "扩展市场")}</small></td>
+          <td><strong>${candidates.length ? `${candidates.length} 只` : "0 只"}</strong><small>${escapeHTML(names || "严格条件下无信号")}</small></td>
+          <td><strong class="${average == null ? "" : directionClass(average)}">${average == null ? "--" : percent(average, true)}</strong><small>${outcomes.length ? `${outcomes.filter((value) => value > 0).length}/${outcomes.length} 为正` : record.missedReason || "等待固定时点"}</small></td>
+          <td><span class="forward-status ${escapeHTML(record.status)}">${escapeHTML(labels[record.status] || record.status)}</span></td>
+        </tr>`;
+      }).join("")
+    : '<tr><td colspan="4" class="muted">从下一次14:30扫描开始自动积累真实前向样本</td></tr>';
+}
+
+async function settleOvernightForwardJournal() {
+  if (isBrowserPreview || state.overnightJournalSettling) return;
+  const now = new Date();
+  const tradingDay = tradingDayStatus(now);
+  const minutes = tradingDay.hour * 60 + tradingDay.minute;
+  state.overnightJournal = expireMissedRecords(state.overnightJournal, tradingDay.dateKey);
+  const pending = state.overnightJournal.filter((record) =>
+    record.status === "pending" && record.nextTradingDate === tradingDay.dateKey
+  );
+  if (!tradingDay.isTradingDay || minutes < 10 * 60 || !pending.length) {
+    writeJSON("hengce.overnight.forward.v1", state.overnightJournal);
+    renderOvernightForwardJournal();
+    return;
+  }
+  state.overnightJournalSettling = true;
+  renderOvernightForwardJournal();
+  const codes = [...new Set(pending.flatMap((record) => (record.candidates || []).map((item) => item.code)))].slice(0, 30);
+  const settled = await Promise.all(codes.map(async (code) => {
+    try {
+      const [quote, points] = await Promise.all([
+        window.hengce.quote(code),
+        window.hengce.intraday(code)
+      ]);
+      const first30 = (points || []).filter((point) => {
+        const date = String(point.time || "").slice(0, 10);
+        const time = String(point.time || "").slice(11, 16);
+        return date === tradingDay.dateKey && time >= "09:30" && time <= "10:00";
+      });
+      const exit = first30.at(-1);
+      if (!(quote?.open > 0) || !exit?.price) return null;
+      return [code, {
+        open: quote.open,
+        exit1000: exit.price,
+        first30High: Math.max(...first30.map((item) => item.price)),
+        first30Low: Math.min(...first30.map((item) => item.price)),
+        source: `${quote.source || "公开行情"} / ${exit.source || "公开分时"}`
+      }];
+    } catch {
+      return null;
+    }
+  }));
+  const marketData = new Map(settled.filter(Boolean));
+  state.overnightJournal = settleForwardRecords(
+    state.overnightJournal,
+    tradingDay.dateKey,
+    marketData,
+    state.settings
+  );
+  writeJSON("hengce.overnight.forward.v1", state.overnightJournal);
+  state.overnightJournalSettling = false;
+  renderOvernightForwardJournal();
 }
 
 function confirmOvernightPicks(snapshot) {
@@ -2240,6 +2397,7 @@ function renderOvernight() {
   error.classList.toggle("hidden", !state.overnightError);
   refreshButton.classList.toggle("rotating", state.overnightLoading);
   const snapshot = state.overnight;
+  renderOvernightForwardJournal();
   const marketScopeLabels = {
     main: "仅沪深主板",
     "main-growth": "主板 + 创业板",
@@ -2266,7 +2424,7 @@ function renderOvernight() {
           ? "名单不会因收盘前最后波动继续变化"
           : "未在14:30–14:50运行，今日没有可恢复的锁定名单"
         : windowState.state === "closed"
-          ? "下一个交易日 14:30 再次开放"
+          ? `${windowState.nextTradingDate ? `${windowState.nextTradingDate} ` : "下一个交易日 "}14:30 再次开放${windowState.calendarConfidence === "estimated" ? " · 休市日历待下版更新" : ""}`
           : "14:30 开始扫描，14:50 锁定最终名单";
   refreshButton.disabled = state.overnightLoading || windowState.locked;
   const summary = snapshot.summary || {};
@@ -2373,6 +2531,7 @@ async function loadOvernight({ force = false } = {}) {
       marketScope: state.overnightMarketScope
     }));
     state.overnight = snapshot;
+    persistOvernightForwardSnapshot(snapshot);
     const newPicks = (snapshot.picks || []).filter((item) => !previousCodes.has(item.code));
     if (!isBrowserPreview && newPicks.length && !$("#overnight-view").classList.contains("active")) {
       window.hengce.notify(
@@ -2420,7 +2579,8 @@ function renderObservationPlan() {
   const plan = buildObservationPlan({
     quote: state.quote,
     model: state.analysis,
-    valuation: state.valuation
+    valuation: state.valuation,
+    settings: state.settings
   });
   const status = $("#observation-plan-status");
   status.textContent = plan.status;
@@ -2428,16 +2588,19 @@ function renderObservationPlan() {
   const range = plan.pullbackRange
     ? `${number(plan.pullbackRange.low)} - ${number(plan.pullbackRange.high)}`
     : "暂未形成";
+  const riskPlan = plan.riskPlan;
   container.innerHTML = [
     ["回踩观察区", range, "需结合量能确认"],
     ["突破触发", plan.breakout ? number(plan.breakout) : "--", "站稳后再观察"],
     ["估值约束", plan.valuationCap ? `不高于 ${number(plan.valuationCap)}` : "数据不足", plan.confidence ? `可信度 ${plan.confidence.label}` : "不强行套用"],
-    ["模型失效位", plan.invalidation ? number(plan.invalidation) : "--", "触及时重新评估"]
+    ["模型失效位", plan.invalidation ? number(plan.invalidation) : "--", "触及时重新评估"],
+    ["参考仓位", riskPlan?.suggestedShares ? `${number(riskPlan.suggestedShares, 0)} 股` : "暂不配置", riskPlan?.positionValue ? `约 ${compactMoney(riskPlan.positionValue)} · ${plainPercent(riskPlan.positionPercent, true)}` : "等待有效区间"],
+    ["计划风险", riskPlan ? compactMoney(riskPlan.capitalAtRisk) : "--", riskPlan ? `预算 ${compactMoney(riskPlan.riskBudget)} · ${plainPercent(riskPlan.riskPercent)}` : "按失效位计算"]
   ].map(([label, value, detail]) => `
     <div><span>${escapeHTML(label)}</span><strong>${escapeHTML(value)}</strong><small>${escapeHTML(detail)}</small></div>
   `).join("");
   $("#observation-plan-note").textContent =
-    `${plan.reason}。${plan.method || "区间仅用于研究观察，不构成买入建议。"}`;
+    `${plan.reason}。${riskPlan?.note ? `${riskPlan.note}。` : ""}${plan.method || "区间仅用于研究观察，不构成买入建议。"}`;
   const watchButton = $("#watch-current-stock");
   const watched = state.quote && state.watchlist.some((item) => item.code === state.quote.code);
   watchButton.disabled = !state.quote || watched;
@@ -2712,8 +2875,8 @@ function drawLineChart(canvas, points, options = {}) {
   context.font = "11px -apple-system, sans-serif";
   context.textAlign = "left";
   context.textBaseline = "middle";
-  context.strokeStyle = "#e1e5e9";
-  context.fillStyle = "#7b8590";
+  context.strokeStyle = cssColor("--chart-grid", "#e1e5e9");
+  context.fillStyle = cssColor("--chart-label", "#7b8590");
   context.lineWidth = 1;
   for (let index = 0; index <= 4; index += 1) {
     const value = minimum + ((maximum - minimum) * index) / 4;
@@ -2882,8 +3045,8 @@ function drawKLineChart(canvas, bars, range) {
 
   context.font = "10px -apple-system, sans-serif";
   context.lineWidth = 1;
-  context.strokeStyle = "#e8ebee";
-  context.fillStyle = "#7b8590";
+  context.strokeStyle = cssColor("--chart-grid", "#e8ebee");
+  context.fillStyle = cssColor("--chart-label", "#7b8590");
   context.textBaseline = "middle";
   context.textAlign = "left";
   for (let index = 0; index <= 4; index += 1) {
@@ -2906,7 +3069,7 @@ function drawKLineChart(canvas, bars, range) {
     context.moveTo(x, panels.price.top);
     context.lineTo(x, panels.macd.bottom);
     context.stroke();
-    context.fillStyle = "#7b8590";
+    context.fillStyle = cssColor("--chart-label", "#7b8590");
     context.fillText(selected[index].date.slice(5), x, height - 20);
   }
 
@@ -2967,7 +3130,7 @@ function drawKLineChart(canvas, bars, range) {
   maDefinitions.forEach((item) => drawSeries(item.values, yPrice, item.color));
   context.textAlign = "left";
   context.textBaseline = "top";
-  context.fillStyle = "#59636e";
+  context.fillStyle = cssColor("--chart-label", "#59636e");
   context.fillText("MA", pad.left, 7);
   let legendX = pad.left + 22;
   maDefinitions.forEach((item) => {
@@ -2989,7 +3152,7 @@ function drawKLineChart(canvas, bars, range) {
       barHeight
     );
   });
-  context.fillStyle = "#59636e";
+  context.fillStyle = cssColor("--chart-label", "#59636e");
   context.textAlign = "left";
   context.textBaseline = "top";
   context.fillText(`VOL ${compactMoney(selected.at(-1).volume)}`, pad.left, panels.volume.top - 13);
@@ -2999,7 +3162,7 @@ function drawKLineChart(canvas, bars, range) {
     panels.kdj.bottom -
     ((Math.max(-20, Math.min(120, value)) + 20) / 140) *
       (panels.kdj.bottom - panels.kdj.top);
-  context.strokeStyle = "#edf0f2";
+  context.strokeStyle = cssColor("--chart-grid", "#edf0f2");
   [20, 80].forEach((value) => {
     context.beginPath();
     context.moveTo(pad.left, yKdj(value));
@@ -3010,7 +3173,7 @@ function drawKLineChart(canvas, bars, range) {
   drawSeries(kdj.map((item) => item.d), yKdj, "#f29b18");
   drawSeries(kdj.map((item) => item.j), yKdj, "#ec4fa4");
   const latestKdj = kdj.at(-1);
-  context.fillStyle = "#59636e";
+  context.fillStyle = cssColor("--chart-label", "#59636e");
   context.fillText(
     `KDJ  K:${number(latestKdj.k, 1)}  D:${number(latestKdj.d, 1)}  J:${number(latestKdj.j, 1)}`,
     pad.left,
@@ -3026,7 +3189,7 @@ function drawKLineChart(canvas, bars, range) {
     panels.macd.top +
     ((macdLimit - value) / (macdLimit * 2)) *
       (panels.macd.bottom - panels.macd.top);
-  context.strokeStyle = "#dfe3e7";
+  context.strokeStyle = cssColor("--chart-grid", "#dfe3e7");
   context.beginPath();
   context.moveTo(pad.left, yMacd(0));
   context.lineTo(width - pad.right, yMacd(0));
@@ -3045,7 +3208,7 @@ function drawKLineChart(canvas, bars, range) {
   drawSeries(macd.map((item) => item.dif), yMacd, "#2767ff");
   drawSeries(macd.map((item) => item.dea), yMacd, "#f29b18");
   const latestMacd = macd.at(-1);
-  context.fillStyle = "#59636e";
+  context.fillStyle = cssColor("--chart-label", "#59636e");
   context.fillText(
     `MACD  DIF:${number(latestMacd.dif, 2)}  DEA:${number(latestMacd.dea, 2)}  柱:${number(latestMacd.histogram, 2)}`,
     pad.left,
@@ -3066,9 +3229,9 @@ function drawKLineChart(canvas, bars, range) {
     context.lineTo(width - pad.right, y);
     context.stroke();
     context.restore();
-    context.fillStyle = "#343c45";
+    context.fillStyle = cssColor("--chart-tooltip", "#343c45");
     context.fillRect(width - pad.right, y - 9, pad.right, 18);
-    context.fillStyle = "#fff";
+    context.fillStyle = cssColor("--chart-tooltip-text", "#fff");
     context.textAlign = "center";
     context.textBaseline = "middle";
     context.fillText(number(selected[hoverIndex].close), width - pad.right / 2, y);
@@ -3160,10 +3323,15 @@ function filteredBacktestBars() {
 function renderBacktest() {
   if (!state.bars.length || !state.quote) return;
   const selectedBars = filteredBacktestBars();
+  const backtestSettings = {
+    ...state.settings,
+    code: state.quote.code,
+    name: state.quote.name
+  };
   const result = runBacktest(
     selectedBars,
     state.strategy,
-    state.settings
+    backtestSettings
   );
   const validationLength = Math.min(
     Math.max(100, Math.floor(selectedBars.length * 0.3)),
@@ -3171,8 +3339,8 @@ function renderBacktest() {
   );
   const trainingBars = validationLength > 0 ? selectedBars.slice(0, -validationLength) : [];
   const validationBars = validationLength > 0 ? selectedBars.slice(-validationLength) : [];
-  const training = runBacktest(trainingBars, state.strategy, state.settings);
-  const validation = runBacktest(validationBars, state.strategy, state.settings);
+  const training = runBacktest(trainingBars, state.strategy, backtestSettings);
+  const validation = runBacktest(validationBars, state.strategy, backtestSettings);
   const strategyInfo = {
     movingAverage: ["均线趋势", "用快慢均线交叉确认趋势，适合方向较明确的阶段"],
     breakout: ["通道突破", "等待价格突破前期高点，以收盘确认降低盘中假突破"],
@@ -3198,7 +3366,7 @@ function renderBacktest() {
     <div><span>后段验证</span><strong class="${directionClass(validation.totalReturn)}">${percent(validation.totalReturn, true)}</strong><small>${validationStatus} · ${validation.tradeCount} 次</small></div>
     <div><span>验证回撤</span><strong class="down">${percent(-validation.maxDrawdown, true)}</strong><small>最近 ${validationBars.length} 个交易日</small></div>
     <div><span>当前状态</span><strong>${escapeHTML(result.openPosition ? "持有中" : "空仓")}</strong><small>${escapeHTML(lastSignal)}</small></div>
-    <div class="strategy-cost-note"><span>成本口径</span><p>佣金、印花税、滑点、100股交易单位；前后段均未调参，后段仅作时间切分验证。</p></div>
+    <div class="strategy-cost-note"><span>成本与成交口径</span><p>风险预算、仓位/流动性上限、佣金、印花税、基础滑点与冲击成本；一字板及停牌不虚构成交。后段仅作时间切分验证。</p></div>
   `;
   $("#backtest-symbol").textContent = `${state.quote.name} ${state.quote.code}`;
   $("#backtest-metrics").innerHTML = [
@@ -3207,7 +3375,11 @@ function renderBacktest() {
     metricCell("同期持有", percent(result.benchmarkReturn, true), "买入并持有"),
     metricCell("最大回撤", percent(-result.maxDrawdown, true), "峰谷损失", "down"),
     metricCell("夏普比率", number(result.sharpeRatio), "风险调整收益"),
-    metricCell("胜率 / 次数", `${percent(result.winRate, true)} / ${result.tradeCount}`, "完整交易")
+    metricCell(
+      "胜率 / 成交",
+      percent(result.winRate, true),
+      `${result.tradeCount} 笔完整交易 · ${number((result.executionStats?.blockedBuys || 0) + (result.executionStats?.blockedSells || 0), 0)} 次受阻`
+    )
   ].join("");
   const values = [
     result.totalReturn,
@@ -3562,6 +3734,7 @@ function restoreUiControls() {
   $("#recommendation-min-score").value = String(state.recommendationFilters.minScore);
   $("#backtest-years").value = String(state.backtestYears);
   $("#minimize-to-tray").checked = state.windowPreferences.minimizeToTray;
+  $("#theme-preference").value = state.appearanceTheme;
   $("#overnight-market-scope").value = state.overnightMarketScope;
   $("#intelligence-phase").value = state.intelligenceFilters.phase;
   $("#intelligence-importance").value = state.intelligenceFilters.importance;
@@ -3696,7 +3869,7 @@ async function buildAiFacts(code, { force = false } = {}) {
     window.hengce.announcements(code, { force }).catch(() => null)
   ]);
   const technical = analyze(bars);
-  const observationPlan = buildObservationPlan({ quote, model: technical, valuation });
+  const observationPlan = buildObservationPlan({ quote, model: technical, valuation, settings: state.settings });
   const holding = state.holdings.find((item) => item.code === code);
   return {
     schemaVersion: 1,
@@ -4027,7 +4200,10 @@ function switchView(view) {
   if (view === "intelligence") loadIntelligence();
   if (view === "compass") loadCompass();
   if (view === "recommendations") loadRecommendations();
-  if (view === "overnight") loadOvernight();
+  if (view === "overnight") {
+    loadOvernight();
+    settleOvernightForwardJournal();
+  }
   if (view === "watchlist") loadWatchlist();
   if (view === "ai") {
     renderAiPage();
@@ -4191,6 +4367,10 @@ function bindEvents() {
       ? "Windows 最小化时将进入系统托盘"
       : "Windows 最小化时将保留在任务栏");
   });
+  $("#theme-preference").addEventListener("change", (event) => {
+    applyThemePreference(event.currentTarget.value);
+    showToast(`界面已切换为${event.currentTarget.selectedOptions[0].textContent}`);
+  });
   $("#save-ai-settings").addEventListener("click", saveAiConfiguration);
   $("#test-ai-connection").addEventListener("click", testAiConfiguration);
   $("#delete-ai-key").addEventListener("click", removeAiKey);
@@ -4346,6 +4526,10 @@ function bindEvents() {
   $$(".chart-wrap").forEach((wrapper) => chartResizeObserver.observe(wrapper));
 }
 
+applyThemePreference(state.appearanceTheme, { persist: false });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if (state.appearanceTheme === "system") applyThemePreference("system", { persist: false });
+});
 populateSettings();
 restoreUiControls();
 bindEvents();

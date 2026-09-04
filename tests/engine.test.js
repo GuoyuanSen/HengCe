@@ -2,6 +2,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   analyze,
+  executionBarrier,
+  priceLimitPercent,
   runBacktest,
   rsiSeries,
   smaSeries,
@@ -89,6 +91,18 @@ test("backtest accounts for lots, fees and next-day execution", () => {
   assert.ok(result.trades.every((trade) => trade.shares % 100 === 0));
   assert.ok(Number.isFinite(result.totalReturn));
   assert.ok(result.maxDrawdown >= 0);
+  assert.ok(result.trades.every((trade) => trade.plannedRisk <= trade.riskBudget + 1));
+});
+
+test("execution model blocks suspension and one-price limit boards", () => {
+  const suspended = [{ open: 10, high: 10, low: 10, volume: 0, percentChange: 0, date: "2026-08-03" }];
+  assert.match(executionBarrier(suspended, 0, "buy", { code: "600000" }).reason, /停牌/);
+  const limitUp = [{ open: 11, high: 11, low: 11, volume: 1000, percentChange: 10, date: "2026-08-03" }];
+  assert.equal(executionBarrier(limitUp, 0, "buy", { code: "600000" }).blocked, true);
+  const limitDown = [{ open: 9, high: 9, low: 9, volume: 1000, percentChange: -10, date: "2026-08-03" }];
+  assert.equal(executionBarrier(limitDown, 0, "sell", { code: "600000" }).blocked, true);
+  assert.equal(priceLimitPercent("300001", "样本", "2026-08-03"), 20);
+  assert.equal(priceLimitPercent("600001", "*ST样本", "2026-06-01"), 5);
 });
 
 test("backtest keeps the final open position instead of inventing a sale", () => {

@@ -167,7 +167,7 @@ test("overnight tail scan is a standalone timed view", () => {
   assert.match(html, /14:30–14:50/);
   assert.match(html, /id="overnight-market-scope"/);
   assert.match(html, /value="main" selected>仅沪深主板/);
-  assert.match(renderer, /if \(view === "overnight"\) loadOvernight\(\)/);
+  assert.match(renderer, /if \(view === "overnight"\) \{[\s\S]*?loadOvernight\(\)/);
   assert.match(renderer, /window\.hengce\.overnight\(\{[\s\S]*?marketScope:\s*state\.overnightMarketScope/);
   assert.match(renderer, /没有信号就保持空仓/);
   assert.match(html, /id="overnight-funnel"/);
@@ -298,7 +298,15 @@ test("daily chart renders candlesticks and technical sub-panels", () => {
   assert.match(html, /id="strategy-observation-card"/);
   assert.match(renderer, /validationLength/);
   assert.match(renderer, /后段验证/);
-  assert.match(renderer, /前后段均未调参/);
+  assert.match(renderer, /后段仅作时间切分验证/);
+});
+
+test("appearance supports system light and dark themes", () => {
+  assert.match(html, /id="theme-preference"/);
+  assert.match(html, /value="system">跟随系统/);
+  assert.match(html, /src="theme_bootstrap\.js"/);
+  assert.match(styles, /html\[data-theme="dark"\]/);
+  assert.match(renderer, /function applyThemePreference/);
 });
 
 test("sidebar exposes version and updates while holdings accept name search", () => {

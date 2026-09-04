@@ -1,4 +1,5 @@
 const { isEligibleCode, isRiskName } = require("./recommendations.js");
+const { nextTradingDateKey, tradingDayStatus } = require("../src/trading_calendar.js");
 
 function finiteNumber(value) {
   const number = Number(value);
@@ -37,21 +38,29 @@ function allowsMarketScope(code, scope) {
 }
 
 function scanWindow(now = new Date()) {
-  const weekday = now.getDay();
-  const minutes = now.getHours() * 60 + now.getMinutes();
-  if (weekday === 0 || weekday === 6) {
-    return { state: "closed", label: "非交易日", canScan: false, locked: true };
+  const tradingDay = tradingDayStatus(now);
+  const minutes = tradingDay.hour * 60 + tradingDay.minute;
+  if (!tradingDay.isTradingDay) {
+    return {
+      state: "closed",
+      label: tradingDay.label,
+      canScan: false,
+      locked: true,
+      date: tradingDay.dateKey,
+      nextTradingDate: nextTradingDateKey(now),
+      calendarConfidence: tradingDay.confidence
+    };
   }
   if (minutes < 14 * 60 + 30) {
-    return { state: "waiting", label: "14:30 开始扫描", canScan: false, locked: false };
+    return { state: "waiting", label: "14:30 开始扫描", canScan: false, locked: false, date: tradingDay.dateKey, calendarConfidence: tradingDay.confidence };
   }
   if (minutes < 14 * 60 + 50) {
-    return { state: "scanning", label: "动态扫描中", canScan: true, locked: false };
+    return { state: "scanning", label: "动态扫描中", canScan: true, locked: false, date: tradingDay.dateKey, calendarConfidence: tradingDay.confidence };
   }
   if (minutes < 15 * 60) {
-    return { state: "locked", label: "最终名单已锁定", canScan: false, locked: true };
+    return { state: "locked", label: "最终名单已锁定", canScan: false, locked: true, date: tradingDay.dateKey, calendarConfidence: tradingDay.confidence };
   }
-  return { state: "closed", label: "今日扫描已结束", canScan: false, locked: true };
+  return { state: "closed", label: "今日扫描已结束", canScan: false, locked: true, date: tradingDay.dateKey, nextTradingDate: nextTradingDateKey(now), calendarConfidence: tradingDay.confidence };
 }
 
 function parseOvernightCandidatePayload(payload, options = {}) {

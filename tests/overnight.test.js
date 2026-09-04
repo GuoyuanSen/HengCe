@@ -32,12 +32,19 @@ test("tail scan defaults to main board while allowing explicit growth and STAR s
 });
 
 test("tail scan window opens at 14:30 and locks at 14:50", () => {
-  assert.equal(scanWindow(new Date(2026, 7, 3, 14, 29)).state, "waiting");
-  assert.equal(scanWindow(new Date(2026, 7, 3, 14, 30)).state, "scanning");
-  assert.equal(scanWindow(new Date(2026, 7, 3, 14, 49)).state, "scanning");
-  const locked = scanWindow(new Date(2026, 7, 3, 14, 50));
+  assert.equal(scanWindow(new Date("2026-08-03T14:29:00+08:00")).state, "waiting");
+  assert.equal(scanWindow(new Date("2026-08-03T14:30:00+08:00")).state, "scanning");
+  assert.equal(scanWindow(new Date("2026-08-03T14:49:00+08:00")).state, "scanning");
+  const locked = scanWindow(new Date("2026-08-03T14:50:00+08:00"));
   assert.equal(locked.state, "locked");
   assert.equal(locked.canScan, false);
+});
+
+test("tail scan remains closed on an official weekday holiday", () => {
+  const holiday = scanWindow(new Date("2026-10-05T14:35:00+08:00"));
+  assert.equal(holiday.state, "closed");
+  assert.equal(holiday.label, "交易所休市");
+  assert.equal(holiday.nextTradingDate, "2026-10-08");
 });
 
 test("candidate parser enforces the six snapshot filters", () => {

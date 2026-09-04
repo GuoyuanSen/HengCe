@@ -694,17 +694,33 @@ async function fetchRecommendations() {
   const pool = parseCandidatePayload(payload);
   if (!pool.length) throw new Error(FRIENDLY_MARKET_ERROR);
   const selected = pool.slice(0, 30);
+  const benchmarkPromise = Promise.allSettled([
+    fetchKLines("000001", 260),
+    fetchKLines("399001", 260)
+  ]);
   const settled = await mapWithConcurrency(selected, 6, async (candidate) => {
-    const bars = await fetchKLines(candidate.code, 130);
+    const bars = await fetchKLines(candidate.code, 260);
     return {
       candidate,
       model: analyze(bars),
-      validation: validateHistoricalSignals(bars, analyze)
+      bars
     };
   });
+  const benchmarkResults = await benchmarkPromise;
+  const shanghaiBenchmark = benchmarkResults[0].status === "fulfilled" ? benchmarkResults[0].value : [];
+  const shenzhenBenchmark = benchmarkResults[1].status === "fulfilled" ? benchmarkResults[1].value : [];
   const candidates = settled
     .filter((item) => item.status === "fulfilled")
-    .map((item) => item.value);
+    .map((item) => ({
+      candidate: item.value.candidate,
+      model: item.value.model,
+      validation: validateHistoricalSignals(
+        item.value.bars,
+        analyze,
+        item.value.candidate,
+        { benchmarkBars: /^6/.test(item.value.candidate.code) ? shanghaiBenchmark : shenzhenBenchmark }
+      )
+    }));
   if (!candidates.length) throw new Error(FRIENDLY_MARKET_ERROR);
   const snapshot = buildRecommendationSnapshot(candidates, {
     asOf: new Date().toISOString(),
@@ -712,7 +728,7 @@ async function fetchRecommendations() {
   });
   snapshot.sourceStatus = {
     candidateSource: "东方财富成交额榜",
-    historySource: "腾讯行情优先，东方财富降级",
+    historySource: "腾讯前复权日线优先，东方财富降级；沪深指数作超额基准",
     loaded: candidates.length,
     requested: selected.length,
     partial: candidates.length < selected.length
@@ -764,7 +780,7 @@ async function fetchOvernightScan(options = {}) {
       ...buildOvernightSnapshot([], { window, poolSize: 0, prefilteredCount: 0, marketScope }),
       sourceStatus: {
         candidateSource: "东方财富A股实时行情",
-        intradaySource: "东方财富分时均价",
+        intradaySource: "腾讯分时优先，东方财富多节点降级",
         historySource: "腾讯行情优先，东方财富降级",
         partial: false
       }
@@ -814,6 +830,7 @@ async function fetchOvernightScan(options = {}) {
       candidate,
       limitUp: recentLimitUp(bars, candidate.code),
       intraday: intradayAverageState(points),
+      intradaySource: points[0]?.source || "未知分时源",
       validation: validateOvernightProxy(bars, candidate.code)
     };
   });
@@ -829,7 +846,7 @@ async function fetchOvernightScan(options = {}) {
   });
   snapshot.sourceStatus = {
     candidateSource: "东方财富A股实时行情",
-    intradaySource: "东方财富分时均价",
+    intradaySource: [...new Set(items.map((item) => item.intradaySource).filter(Boolean))].join(" / ") || "分时数据暂缺",
     historySource: "腾讯行情优先，东方财富降级",
     loaded: items.length,
     requested: selected.length,
@@ -1372,6 +1389,7 @@ function createWindowsTray() {
 
 function createWindow() {
   const isMac = process.platform === "darwin";
+  const captureTheme = String(process.env.HENGCE_CAPTURE_THEME || "").trim();
   const window = new BrowserWindow({
     width: 1360,
     height: 860,
@@ -1384,7 +1402,7 @@ function createWindow() {
           autoHideMenuBar: true,
           icon: path.join(__dirname, "..", "Resources", "AppIcon.png")
         }),
-    backgroundColor: "#f4f6f8",
+    backgroundColor: captureTheme === "dark" ? "#0e141a" : "#f4f6f8",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -1452,10 +1470,12 @@ function createWindow() {
   const captureView = String(process.env.HENGCE_CAPTURE_VIEW || "").trim();
   const capturePlatform = String(process.env.HENGCE_CAPTURE_PLATFORM || "").trim();
   const captureStock = String(process.env.HENGCE_CAPTURE_STOCK || "").trim();
+  const requestedCaptureTheme = String(process.env.HENGCE_CAPTURE_THEME || "").trim();
   const captureQuery = {};
   if (captureView) captureQuery.view = captureView;
   if (capturePlatform) captureQuery.platform = capturePlatform;
   if (/^\d{6}$/.test(captureStock)) captureQuery.stock = captureStock;
+  if (["light", "dark"].includes(requestedCaptureTheme)) captureQuery.theme = requestedCaptureTheme;
   window.loadFile(path.join(__dirname, "..", "src", "index.html"), {
     query: Object.keys(captureQuery).length ? captureQuery : undefined
   });

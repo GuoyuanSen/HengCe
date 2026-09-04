@@ -85,6 +85,54 @@
     return Math.sqrt(variance) * Math.sqrt(252);
   }
 
+  function priceLimitPercent(code, name, date) {
+    const value = String(code || "");
+    if (/^(30|68)/.test(value)) return 20;
+    const riskWarning = /(?:^|\*)ST/i.test(String(name || ""));
+    if (riskWarning && String(date || "") < "2026-07-06") return 5;
+    return 10;
+  }
+
+  function executionBarrier(bars, index, side, settings = {}) {
+    const bar = bars[index] || {};
+    if (![bar.open, bar.high, bar.low].every((value) => Number.isFinite(Number(value)) && Number(value) > 0)) {
+      return { blocked: true, reason: "价格数据无效" };
+    }
+    if (!Number.isFinite(Number(bar.volume)) || Number(bar.volume) <= 0) {
+      return { blocked: true, reason: "停牌或无成交" };
+    }
+    const range = Math.abs(Number(bar.high) - Number(bar.low));
+    const onePrice = range <= Math.max(0.011, Number(bar.open) * 0.0005);
+    const change = Number(bar.percentChange);
+    const limit = priceLimitPercent(settings.code, settings.name, bar.date);
+    if (side === "buy" && onePrice && Number.isFinite(change) && change >= limit - 0.15) {
+      return { blocked: true, reason: "一字涨停无法合理假设买入" };
+    }
+    if (side === "sell" && onePrice && Number.isFinite(change) && change <= -limit + 0.15) {
+      return { blocked: true, reason: "一字跌停无法合理假设卖出" };
+    }
+    return { blocked: false, reason: "" };
+  }
+
+  function executionSlippage(baseRate, gross, previousBar, settings = {}) {
+    const previousAmount = Number(previousBar?.amount) > 0
+      ? Number(previousBar.amount)
+      : Number(previousBar?.close) > 0 && Number(previousBar?.volume) > 0
+        ? Number(previousBar.close) * Number(previousBar.volume)
+        : 0;
+    const participationRate = previousAmount > 0 ? gross / previousAmount : null;
+    const impactCoefficient = Math.max(0, Number(settings.impactCoefficient ?? 0.1));
+    const maximumImpact = Math.max(0, Number(settings.maximumImpactSlippage ?? 0.005));
+    const impact = participationRate == null
+      ? 0
+      : Math.min(maximumImpact, participationRate * impactCoefficient);
+    return {
+      rate: Math.max(0, Number(baseRate || 0)) + impact,
+      participationRate,
+      referenceAmount: previousAmount || null
+    };
+  }
+
   function analyze(bars) {
     if (bars.length < 60) {
       return {
@@ -248,6 +296,11 @@
       slowPeriod: 30,
       breakoutPeriod: 20,
       stopLossPercent: 8,
+      riskPerTradePercent: 0.75,
+      maxPositionPercent: 25,
+      maxDailyParticipationPercent: 1,
+      impactCoefficient: 0.1,
+      maximumImpactSlippage: 0.005,
       ...settings
     };
     if (bars.length < 80) {
@@ -260,7 +313,9 @@
         winRate: 0,
         tradeCount: 0,
         equityCurve: [],
-        trades: []
+        trades: [],
+        skippedExecutions: [],
+        executionStats: { blockedBuys: 0, blockedSells: 0, liquidityCappedEntries: 0 }
       };
     }
 
@@ -281,6 +336,12 @@
     let pendingSell = false;
     const equityCurve = [];
     const trades = [];
+    const skippedExecutions = [];
+    let entrySlippageRate = 0;
+    let entryParticipationRate = null;
+    let plannedRisk = 0;
+    let entryRiskBudget = 0;
+    let liquidityCappedEntries = 0;
     const start = Math.max(60, config.slowPeriod + 2);
 
     const shouldEnter = (index) => {
@@ -328,45 +389,89 @@
     for (let index = start; index < bars.length; index += 1) {
       const bar = bars[index];
       if (pendingSell && shares > 0) {
-        const exitPrice = bar.open * (1 - config.slippageRate);
-        const gross = exitPrice * shares;
-        const fee = Math.max(5, gross * config.commissionRate);
-        const stamp = gross * config.stampDutyRate;
-        const profit = gross - fee - stamp - entryCost;
-        cash += gross - fee - stamp;
-        trades.push({
-          entryDate,
-          exitDate: bar.date,
-          entryPrice,
-          exitPrice,
-          shares,
-          profit,
-          returnPercent: profit / entryCost
-        });
-        shares = 0;
-        entryPrice = 0;
-        entryCost = 0;
-        entryDate = null;
-        pendingSell = false;
+        const barrier = executionBarrier(bars, index, "sell", config);
+        if (barrier.blocked) {
+          skippedExecutions.push({ date: bar.date, side: "sell", reason: barrier.reason });
+        } else {
+          const estimatedGross = Number(bar.open) * shares;
+          const slippage = executionSlippage(config.slippageRate, estimatedGross, bars[index - 1], config);
+          const exitPrice = bar.open * (1 - slippage.rate);
+          const gross = exitPrice * shares;
+          const fee = Math.max(5, gross * config.commissionRate);
+          const stamp = gross * config.stampDutyRate;
+          const profit = gross - fee - stamp - entryCost;
+          cash += gross - fee - stamp;
+          trades.push({
+            entryDate,
+            exitDate: bar.date,
+            entryPrice,
+            exitPrice,
+            shares,
+            profit,
+            returnPercent: profit / entryCost,
+            plannedRisk,
+            riskBudget: entryRiskBudget,
+            entrySlippageRate,
+            exitSlippageRate: slippage.rate,
+            entryParticipationRate,
+            exitParticipationRate: slippage.participationRate
+          });
+          shares = 0;
+          entryPrice = 0;
+          entryCost = 0;
+          entryDate = null;
+          pendingSell = false;
+          entrySlippageRate = 0;
+          entryParticipationRate = null;
+          plannedRisk = 0;
+          entryRiskBudget = 0;
+        }
       }
       if (pendingBuy && shares === 0) {
-        const executionPrice = bar.open * (1 + config.slippageRate);
-        const estimatedFee = Math.max(5, cash * config.commissionRate);
-        shares = Math.floor((cash - estimatedFee) / executionPrice / 100) * 100;
-        if (shares > 0) {
-          const gross = executionPrice * shares;
-          const fee = Math.max(5, gross * config.commissionRate);
-          cash -= gross + fee;
-          entryPrice = executionPrice;
-          entryCost = gross + fee;
-          entryDate = bar.date;
+        const barrier = executionBarrier(bars, index, "buy", config);
+        if (barrier.blocked) {
+          skippedExecutions.push({ date: bar.date, side: "buy", reason: barrier.reason });
+          pendingBuy = false;
+        } else {
+          const equity = cash;
+          const basePrice = Number(bar.open);
+          const riskBudget = equity * Math.max(0, Number(config.riskPerTradePercent)) / 100;
+          const riskPerShare = basePrice * Math.max(0.001, Number(config.stopLossPercent)) / 100;
+          const riskShares = Math.floor(riskBudget / riskPerShare / 100) * 100;
+          const positionCap = equity * Math.max(0, Number(config.maxPositionPercent)) / 100;
+          const positionShares = Math.floor(positionCap / basePrice / 100) * 100;
+          const previousVolume = Number(bars[index - 1]?.volume);
+          const liquidityShares = previousVolume > 0
+            ? Math.floor(previousVolume * Math.max(0, Number(config.maxDailyParticipationPercent)) / 100 / 100) * 100
+            : Number.POSITIVE_INFINITY;
+          const affordableShares = Math.floor((cash - Math.max(5, cash * config.commissionRate)) / basePrice / 100) * 100;
+          const desiredShares = Math.max(0, Math.min(riskShares, positionShares, affordableShares));
+          const plannedShares = Math.max(0, Math.min(desiredShares, liquidityShares));
+          if (plannedShares < desiredShares) liquidityCappedEntries += 1;
+          const slippage = executionSlippage(config.slippageRate, plannedShares * basePrice, bars[index - 1], config);
+          const executionPrice = basePrice * (1 + slippage.rate);
+          shares = Math.floor(Math.min(plannedShares, (cash - 5) / executionPrice) / 100) * 100;
+          if (shares > 0) {
+            const gross = executionPrice * shares;
+            const fee = Math.max(5, gross * config.commissionRate);
+            cash -= gross + fee;
+            entryPrice = executionPrice;
+            entryCost = gross + fee;
+            entryDate = bar.date;
+            entrySlippageRate = slippage.rate;
+            entryParticipationRate = slippage.participationRate;
+            plannedRisk = shares * riskPerShare;
+            entryRiskBudget = riskBudget;
+          } else {
+            skippedExecutions.push({ date: bar.date, side: "buy", reason: "风险预算、仓位或流动性不足100股" });
+          }
+          pendingBuy = false;
         }
-        pendingBuy = false;
       }
 
       const stop = shares > 0 &&
         bar.close <= entryPrice * (1 - config.stopLossPercent / 100);
-      if (shares > 0) pendingSell = stop || shouldExit(index);
+      if (shares > 0) pendingSell = pendingSell || stop || shouldExit(index);
       else pendingBuy = shouldEnter(index);
       equityCurve.push({ date: bar.date, value: cash + shares * bar.close });
     }
@@ -407,6 +512,12 @@
       tradeCount: trades.length,
       equityCurve,
       trades,
+      skippedExecutions,
+      executionStats: {
+        blockedBuys: skippedExecutions.filter((item) => item.side === "buy").length,
+        blockedSells: skippedExecutions.filter((item) => item.side === "sell").length,
+        liquidityCappedEntries
+      },
       openPosition: shares > 0
         ? {
             entryDate,
@@ -422,6 +533,8 @@
 
   return {
     analyze,
+    executionBarrier,
+    priceLimitPercent,
     runBacktest,
     smaSeries,
     rsiSeries,

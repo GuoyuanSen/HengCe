@@ -12,7 +12,7 @@
     return Math.round(value * 100) / 100;
   }
 
-  function buildObservationPlan({ quote, model, valuation } = {}) {
+  function buildObservationPlan({ quote, model, valuation, settings = {} } = {}) {
     const price = finite(quote?.price);
     const support = finite(model?.support);
     const sma20 = finite(model?.sma20);
@@ -44,6 +44,21 @@
     const breakout = roundPrice(pressure + atr * 0.1);
     const invalidation = roundPrice(riskLine);
     const zoneAvailable = score >= 55 && price > riskLine && high > low;
+    const capital = Math.max(0, finite(settings.initialCapital) || 100000);
+    const riskPercent = Math.max(0.1, finite(settings.riskPerTradePercent) || 0.75);
+    const maxPositionPercent = Math.max(1, finite(settings.maxPositionPercent) || 25);
+    const referenceEntry = zoneAvailable ? high : null;
+    const riskPerShare = referenceEntry && referenceEntry > invalidation
+      ? referenceEntry - invalidation
+      : null;
+    const riskBudget = capital * riskPercent / 100;
+    const riskShares = riskPerShare ? Math.floor(riskBudget / riskPerShare / 100) * 100 : 0;
+    const positionShares = referenceEntry
+      ? Math.floor((capital * maxPositionPercent / 100) / referenceEntry / 100) * 100
+      : 0;
+    const suggestedShares = Math.max(0, Math.min(riskShares, positionShares));
+    const positionValue = referenceEntry ? suggestedShares * referenceEntry : 0;
+    const capitalAtRisk = riskPerShare ? suggestedShares * riskPerShare : 0;
     let status = "等待条件";
     let reason = "技术结构或估值约束暂未形成有效交集";
     if (score < 55) {
@@ -72,8 +87,26 @@
       breakout,
       valuationCap: valuationCap ? roundPrice(valuationCap) : null,
       invalidation,
+      riskPlan: zoneAvailable
+        ? {
+            capital,
+            riskPercent,
+            maxPositionPercent,
+            riskBudget,
+            referenceEntry,
+            riskPerShare,
+            suggestedShares,
+            positionValue,
+            positionPercent: capital ? positionValue / capital : 0,
+            capitalAtRisk,
+            executable: suggestedShares >= 100,
+            note: suggestedShares >= 100
+              ? "按观察区上沿和失效位估算，取风险预算、仓位上限两者较小值"
+              : "按当前风险预算不足100股，应等待或调整研究资金基准"
+          }
+        : null,
       confidence: valuation?.confidence || null,
-      method: "支撑与MA20构成回踩锚点，ATR控制区间宽度，压力位定义突破触发，估值基准限制上沿"
+      method: "支撑与MA20构成回踩锚点，ATR控制区间宽度，压力位定义突破触发；仓位按风险预算与最大仓位双重约束"
     };
   }
 

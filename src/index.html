@@ -8,6 +8,7 @@
     >
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>衡策</title>
+    <script src="theme_bootstrap.js"></script>
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
@@ -611,6 +612,22 @@
               </div>
               <p id="overnight-note" class="hotspots-note"></p>
             </section>
+            <section class="overnight-forward-section">
+              <div class="section-heading">
+                <div>
+                  <h2>真实前向验证</h2>
+                  <span>保存14:30、14:40、14:50实际快照，次一交易日10:00后核对，不用日线倒推分时条件</span>
+                </div>
+              </div>
+              <div id="overnight-forward-stats" class="overnight-forward-stats"></div>
+              <div class="table-scroll">
+                <table class="overnight-forward-table">
+                  <thead><tr><th>日期 / 检查点</th><th>信号</th><th>次日10:00结果</th><th>状态</th></tr></thead>
+                  <tbody id="overnight-forward-body"></tbody>
+                </table>
+              </div>
+              <p class="hotspots-note">净收益口径包含双边佣金、印花税和滑点；错过次日10:00后的首次核对将标记为“未采集”，不使用后来数据回填。</p>
+            </section>
             <section class="overnight-discipline">
               <i data-lucide="alarm-clock-check"></i>
               <div>
@@ -898,6 +915,18 @@
                 <span>单边滑点率</span>
                 <input name="slippageRate" type="number" min="0" step="0.0001">
               </label>
+              <label>
+                <span>单笔风险预算（%）</span>
+                <input name="riskPerTradePercent" type="number" min="0.1" max="5" step="0.05">
+              </label>
+              <label>
+                <span>单股最大仓位（%）</span>
+                <input name="maxPositionPercent" type="number" min="1" max="100" step="1">
+              </label>
+              <label>
+                <span>前日成交量参与上限（%）</span>
+                <input name="maxDailyParticipationPercent" type="number" min="0.1" max="10" step="0.1">
+              </label>
             </fieldset>
             <fieldset>
               <legend>策略参数</legend>
@@ -919,6 +948,20 @@
               </label>
             </fieldset>
           </form>
+          <section class="desktop-preferences appearance-preferences">
+            <div>
+              <h2>界面外观</h2>
+              <p>深色模式会同步调整图表、卡片、表格和输入区域，适合夜间看盘。</p>
+            </div>
+            <label class="preference-select">
+              <span>主题</span>
+              <select id="theme-preference">
+                <option value="system">跟随系统</option>
+                <option value="light">浅色</option>
+                <option value="dark">深色</option>
+              </select>
+            </label>
+          </section>
           <section class="desktop-preferences windows-only">
             <div>
               <h2>Windows 桌面行为</h2>
@@ -1044,6 +1087,8 @@
     <script src="engine.js"></script>
     <script src="portfolio.js"></script>
     <script src="preferences.js"></script>
+    <script src="trading_calendar.js"></script>
+    <script src="overnight_journal.js"></script>
     <script src="trade_plan.js"></script>
     <script src="ai_tracking.js"></script>
     <script src="intelligence.js"></script>
