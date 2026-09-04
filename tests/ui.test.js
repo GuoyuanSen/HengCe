@@ -50,6 +50,16 @@ test("market failures are reduced to a friendly message", () => {
   assert.match(renderer, /window\.hengce\.indices\(options\)\.catch\(\(\) => \[\]\)/);
 });
 
+test("dashboard restores a local snapshot and lazy-loads full history for backtests", () => {
+  assert.match(renderer, /hengce\.dashboard\.snapshots\.v1/);
+  assert.match(renderer, /function restoreDashboardSnapshot/);
+  assert.match(renderer, /preserveContent:\s*showingExisting/);
+  assert.match(renderer, /\.klines\(normalized, 300, options\)/);
+  assert.match(renderer, /function ensureBacktestHistory/);
+  assert.match(renderer, /\.klines\(code, 1300, \{ force \}\)/);
+  assert.match(renderer, /显示最近快照，正在后台刷新/);
+});
+
 test("valuation is isolated from the primary quote request", () => {
   assert.match(preload, /valuation:\s*\(code, options/);
   assert.match(main, /ipcMain\.handle\("market:valuation"/);

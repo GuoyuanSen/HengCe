@@ -638,6 +638,9 @@ const state = {
   aiLoading: false,
   aiError: "",
   aiSnapshots: Array.isArray(storedAiSnapshots) ? storedAiSnapshots.slice(0, 80) : [],
+  dashboardSnapshotStale: false,
+  backtestHistoryCode: "",
+  backtestHistoryLoading: false,
   loading: false
 };
 
@@ -755,12 +758,12 @@ function showToast(message) {
   showToast.timer = setTimeout(() => toast.classList.add("hidden"), 2800);
 }
 
-function setLoading(loading) {
+function setLoading(loading, { preserveContent = false } = {}) {
   state.loading = loading;
-  $("#dashboard-loading").classList.toggle("hidden", !loading);
+  $("#dashboard-loading").classList.toggle("hidden", !loading || preserveContent);
   $("#dashboard-content").classList.toggle(
     "hidden",
-    loading || !state.quote
+    !state.quote || (loading && !preserveContent)
   );
   $("#analyze-button").disabled = loading;
   $("#refresh-button").disabled = loading;
@@ -872,6 +875,56 @@ async function submitStockSearch() {
   else showError("未找到匹配的A股，请换一个名称或输入6位代码。");
 }
 
+function dashboardSnapshotFor(code) {
+  const snapshots = readJSON("hengce.dashboard.snapshots.v1", []);
+  if (!Array.isArray(snapshots)) return null;
+  const snapshot = snapshots.find((item) => item?.code === code);
+  const savedAt = new Date(snapshot?.savedAt).getTime();
+  if (
+    !snapshot?.quote ||
+    snapshot.quote.code !== code ||
+    !Array.isArray(snapshot.bars) ||
+    snapshot.bars.length < 60 ||
+    !Number.isFinite(savedAt) ||
+    Date.now() - savedAt > 7 * 86400000
+  ) {
+    return null;
+  }
+  return snapshot;
+}
+
+function restoreDashboardSnapshot(code) {
+  const snapshot = dashboardSnapshotFor(code);
+  if (!snapshot) return false;
+  try {
+    state.quote = snapshot.quote;
+    state.bars = snapshot.bars;
+    state.analysis = analyze(snapshot.bars);
+    state.dashboardSnapshotStale = true;
+    state.quotes.set(code, snapshot.quote);
+    renderDashboard();
+    renderIndices();
+    $("#update-time").textContent = "显示最近快照 · 后台刷新中";
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function saveDashboardSnapshot(code, quote, bars) {
+  const snapshots = readJSON("hengce.dashboard.snapshots.v1", []);
+  const next = {
+    code,
+    quote,
+    bars: bars.slice(-300),
+    savedAt: new Date().toISOString()
+  };
+  writeJSON(
+    "hengce.dashboard.snapshots.v1",
+    [next, ...(Array.isArray(snapshots) ? snapshots : []).filter((item) => item?.code !== code)].slice(0, 5)
+  );
+}
+
 async function loadMarketData(code = $("#stock-code").value, { force = false } = {}) {
   const normalized = String(code).trim().toLowerCase().replace(/^sh|^sz/, "");
   if (!/^\d{6}$/.test(normalized)) {
@@ -880,7 +933,16 @@ async function loadMarketData(code = $("#stock-code").value, { force = false } =
   }
 
   const request = ++marketLoadRequest;
+  const sameCurrentStock = state.quote?.code === normalized && state.bars.length >= 60;
   state.code = normalized;
+  const showingExisting = sameCurrentStock || (!force && restoreDashboardSnapshot(normalized));
+  if (!showingExisting) {
+    state.quote = null;
+    state.bars = [];
+    state.analysis = null;
+    state.dashboardSnapshotStale = false;
+  }
+  state.backtestHistoryCode = "";
   state.intraday = [];
   state.intradayError = "";
   state.valuation = null;
@@ -892,7 +954,7 @@ async function loadMarketData(code = $("#stock-code").value, { force = false } =
   state.announcementsLoading = true;
   state.announcementsError = "";
   $("#stock-code").value = normalized;
-  setLoading(true);
+  setLoading(true, { preserveContent: showingExisting });
   showError("");
   renderValuation();
   renderCompanyProfile();
@@ -915,19 +977,22 @@ async function loadMarketData(code = $("#stock-code").value, { force = false } =
       .catch((error) => ({ error: friendlyMarketError(error) }));
     const [quote, bars] = await Promise.all([
       window.hengce.quote(normalized, options),
-      window.hengce.klines(normalized, 1300, options)
+      window.hengce.klines(normalized, 300, options)
     ]);
     if (request !== marketLoadRequest) return false;
     state.quote = quote;
     state.bars = bars;
     state.indices = [];
     state.analysis = analyze(bars);
+    state.dashboardSnapshotStale = false;
+    saveDashboardSnapshot(normalized, quote, bars);
     writeJSON("hengce.lastStock.v1", normalized);
     state.quotes.set(quote.code, quote);
     renderDashboard();
     renderBacktest();
     renderIndices();
     renderHoldings();
+    if (state.activeView === "backtest") ensureBacktestHistory();
     intradayRequest.then(({ points, error }) => {
       if (request !== marketLoadRequest || state.code !== normalized) return;
       state.intraday = points;
@@ -2468,11 +2533,12 @@ function renderDashboard() {
   const model = state.analysis;
   if (!quote || !model) return;
   const quoteFreshness = freshness(quote.timestamp, 15);
+  const snapshotMode = state.dashboardSnapshotStale;
   const dataStatus = $("#dashboard-data-status");
   dataStatus.innerHTML = `
-    <span class="status-dot ${quoteFreshness.stale ? "stale" : ""}"></span>
-    <span>${quoteFreshness.stale ? "行情可能已过期" : "行情时间有效"}</span>
-    <small>报价：${escapeHTML(quote.source || "腾讯/东方财富公开行情")} · 日线：前复权双源降级 · 财务与行业：东方财富公开数据</small>
+    <span class="status-dot ${quoteFreshness.stale || snapshotMode ? "stale" : ""}"></span>
+    <span>${snapshotMode ? "显示最近快照，正在后台刷新" : quoteFreshness.stale ? "行情可能已过期" : "行情时间有效"}</span>
+    <small>报价：${escapeHTML(quote.source || "腾讯/东方财富公开行情")} · 日线：${snapshotMode ? "本地快照" : "前复权双源降级"} · 财务与行业：东方财富公开数据</small>
   `;
   dataStatus.classList.remove("hidden");
   const change = quote.price - quote.previousClose;
@@ -3051,6 +3117,34 @@ function schedulePriceChart() {
       drawPriceChart();
     }
   });
+}
+
+async function ensureBacktestHistory({ force = false } = {}) {
+  if (!state.quote || state.bars.length < 60 || state.backtestHistoryLoading) return;
+  if (!force && state.backtestHistoryCode === state.code) {
+    renderBacktest();
+    return;
+  }
+  const code = state.code;
+  state.backtestHistoryLoading = true;
+  const button = $("#run-backtest");
+  button.disabled = true;
+  button.textContent = "加载完整历史…";
+  try {
+    const bars = await window.hengce.klines(code, 1300, { force });
+    if (state.code !== code) return;
+    state.bars = bars;
+    state.analysis = analyze(bars);
+    state.backtestHistoryCode = code;
+    renderBacktest();
+  } catch (error) {
+    showToast(`完整回测数据加载失败：${friendlyMarketError(error)}`);
+    renderBacktest();
+  } finally {
+    state.backtestHistoryLoading = false;
+    button.disabled = false;
+    button.textContent = "重新计算";
+  }
 }
 
 function filteredBacktestBars() {
@@ -3928,7 +4022,7 @@ function switchView(view) {
   $$(".view").forEach((section) =>
     section.classList.toggle("active", section.id === `${view}-view`)
   );
-  if (view === "backtest") requestAnimationFrame(renderBacktest);
+  if (view === "backtest") ensureBacktestHistory();
   if (view === "hotspots") loadHotspots();
   if (view === "intelligence") loadIntelligence();
   if (view === "compass") loadCompass();
@@ -4077,7 +4171,7 @@ function bindEvents() {
     saveUiState();
     renderBacktest();
   });
-  $("#run-backtest").addEventListener("click", renderBacktest);
+  $("#run-backtest").addEventListener("click", () => ensureBacktestHistory({ force: true }));
   $("#settings-form").addEventListener("change", saveSettings);
   $("#reset-settings").addEventListener("click", () => {
     state.settings = { ...DEFAULT_SETTINGS };
