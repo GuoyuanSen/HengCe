@@ -2347,7 +2347,7 @@ function renderWatchlist() {
       const addedAt = new Date(item.addedAt);
       const alertClass = alert === "观察中" ? "" : alert === "等待行情" ? "muted" : "alert-active";
       return `
-        <tr class="holding-row" data-code="${holding.code}" tabindex="0" role="button" aria-label="分析 ${escapeHTML(holding.name || holding.code)}">
+        <tr class="holding-row" data-code="${item.code}" tabindex="0" role="button" aria-label="分析 ${escapeHTML(item.name || item.code)}">
           <td><div class="stock-cell"><strong>${escapeHTML(item.name)}</strong><span>${escapeHTML(item.code)} · ${escapeHTML(item.industry)}</span></div></td>
           <td class="${directionClass(data?.quote?.percentChange)}"><strong>${number(data?.quote?.price)}</strong><small>${percent(data?.quote?.percentChange)}</small></td>
           <td><strong>${number(data?.model?.score, 0)}</strong><small>${escapeHTML(data?.model?.trend || "--")}</small></td>
@@ -6158,6 +6158,14 @@ function bindEvents() {
   $$(".chart-wrap").forEach((wrapper) => chartResizeObserver.observe(wrapper));
 }
 
+function safeStartupRender(label, callback) {
+  try {
+    callback();
+  } catch (error) {
+    console.error(`启动渲染“${label}”失败`, error);
+  }
+}
+
 applyThemePreference(state.appearanceTheme, { persist: false });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
   if (state.appearanceTheme === "system") applyThemePreference("system", { persist: false });
@@ -6166,25 +6174,25 @@ populateSettings();
 populateAlertSettings();
 restoreUiControls();
 bindEvents();
+loadInitialMarketData();
 window.hengce.setWindowPreferences(state.windowPreferences).catch(() => {});
-switchView(state.activeView);
-renderUpdate();
+safeStartupRender("初始页面", () => switchView(state.activeView));
+safeStartupRender("应用更新", renderUpdate);
 window.hengce.appVersion().then((version) => {
   state.appVersion = version;
   renderUpdate();
 }).catch(() => {});
-renderHoldings();
-renderWatchlist();
-renderPortfolioRisk();
-renderAiPage();
-renderTradingWorkspace();
-renderTradingCalendarStatus();
+safeStartupRender("持仓", renderHoldings);
+safeStartupRender("观察提醒", renderWatchlist);
+safeStartupRender("组合风险", renderPortfolioRisk);
+safeStartupRender("AI追踪", renderAiPage);
+safeStartupRender("交易复盘", renderTradingWorkspace);
+safeStartupRender("交易日历", renderTradingCalendarStatus);
 loadAiSettings();
 refreshIcons();
 updateOvernightClock();
 setInterval(updateOvernightClock, 1000);
 scheduleOvernightRefresh();
 scheduleIntelligenceRefresh(60000);
-loadInitialMarketData();
 setTimeout(() => loadTradingCalendar(), 2200);
 setTimeout(() => checkForUpdates({ silent: true }), 4500);

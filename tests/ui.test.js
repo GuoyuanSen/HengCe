@@ -408,6 +408,18 @@ test("dashboard starts with intraday mode and defers non-critical startup work",
   assert.match(renderer, /setTimeout\(\(\) => loadTradingCalendar\(\), 2200\)/);
   assert.match(renderer, /setTimeout\(\(\) => checkForUpdates\(\{ silent: true \}\), 4500\)/);
   assert.match(styles, /\.dashboard-skeleton/);
+  const bootstrap = renderer.slice(renderer.lastIndexOf("applyThemePreference(state.appearanceTheme"));
+  assert.ok(bootstrap.indexOf("loadInitialMarketData();") < bootstrap.indexOf('safeStartupRender("观察提醒", renderWatchlist)'));
+  assert.match(renderer, /function safeStartupRender/);
+});
+
+test("watchlist startup render uses the mapped watch item without an undefined holding", () => {
+  const start = renderer.indexOf("function renderWatchlist()");
+  const end = renderer.indexOf("async function loadWatchlist", start);
+  const section = renderer.slice(start, end);
+  assert.match(section, /data-code="\$\{item\.code\}"/);
+  assert.match(section, /escapeHTML\(item\.name \|\| item\.code\)/);
+  assert.doesNotMatch(section, /\bholding\./);
 });
 
 test("company profile improves long-form reading hierarchy", () => {

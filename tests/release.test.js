@@ -22,18 +22,17 @@ const releaseWorkflow = fs.readFileSync(
   "utf8"
 );
 const macBuild = fs.readFileSync(path.join(root, "scripts", "build.js"), "utf8");
-const releaseNotes = fs.readFileSync(path.join(root, "RELEASE_NOTES_v0.7.0.md"), "utf8");
+const releaseNotes = fs.readFileSync(path.join(root, "RELEASE_NOTES_v0.7.1.md"), "utf8");
 
-test("release version is synchronized for v0.7.0", () => {
-  assert.equal(packageJson.version, "0.7.0");
+test("release version is synchronized for v0.7.1", () => {
+  assert.equal(packageJson.version, "0.7.1");
   assert.match(packageJson.scripts["build:win"], /build_windows\.js/);
   assert.match(macBuild, /ELECTRON_ZIP_DIR/);
   assert.match(macBuild, /CFBundleIconFile/);
   assert.match(macBuild, /AppIcon\.icns/);
-  assert.match(macBuild, /buildVersion:\s*"13"/);
-  assert.match(releaseNotes, /真实交易流水/);
-  assert.match(releaseNotes, /日韩市场与全球半导体链/);
-  assert.match(releaseNotes, /更新检查可靠性/);
+  assert.match(macBuild, /buildVersion:\s*"14"/);
+  assert.match(releaseNotes, /启动自动分析/);
+  assert.match(releaseNotes, /holding is not defined/);
 });
 
 test("tag workflow builds both platforms and publishes release assets", () => {
