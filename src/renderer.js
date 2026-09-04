@@ -486,7 +486,12 @@ const {
   setPrimaryHolding
 } = window.HengCePreferences;
 const { buildObservationPlan } = window.HengCeTradePlan;
-const { marketParts, nextTradingDateKey, tradingDayStatus } = window.HengCeTradingCalendar;
+const {
+  marketParts,
+  mergeOfficialCalendar,
+  nextTradingDateKey,
+  tradingDayStatus
+} = window.HengCeTradingCalendar;
 const {
   checkpointFor,
   expireMissedRecords,
@@ -649,6 +654,8 @@ const state = {
     : ["system", "light", "dark"].includes(storedAppearance.theme)
       ? storedAppearance.theme
       : "system",
+  tradingCalendar: null,
+  tradingCalendarLoading: false,
   aiConfig: null,
   aiConfigLoading: false,
   aiTargetCode: storedUi.aiTargetCode || startupCodeCandidates[0] || resolveInitialCode(),
@@ -703,6 +710,65 @@ function applyThemePreference(preference, { persist = true } = {}) {
     schedulePriceChart();
     if (state.bars.length && state.quote) renderBacktest();
   });
+}
+
+function renderTradingCalendarStatus() {
+  const status = $("#trading-calendar-status");
+  const detail = $("#trading-calendar-detail");
+  const button = $("#refresh-trading-calendar");
+  if (!status || !detail || !button) return;
+  button.disabled = state.tradingCalendarLoading;
+  if (state.tradingCalendarLoading) {
+    status.textContent = "正在同步";
+    detail.textContent = "正在读取上海证券交易所官方年度休市安排…";
+    return;
+  }
+  const result = state.tradingCalendar;
+  if (!result) {
+    status.textContent = "等待检查";
+    return;
+  }
+  const labels = {
+    online: "官方已同步",
+    cached: "官方缓存有效",
+    "stale-cache": "离线使用缓存",
+    builtin: "内置日历有效",
+    unavailable: "日历未验证"
+  };
+  status.textContent = `${labels[result.status] || "日历状态未知"} · ${result.currentYear}`;
+  status.className = `data-confidence ${result.covered ? "" : "low"}`.trim();
+  const fetchedAt = result.calendar?.fetchedAt
+    ? new Date(result.calendar.fetchedAt).toLocaleString("zh-CN", { hour12: false })
+    : "内置版本";
+  detail.textContent = result.covered
+    ? `${result.coverage?.source || "交易所休市安排"} · 更新 ${fetchedAt}${result.error ? ` · 本次联网失败：${result.error}` : ""}`
+    : `尚未取得 ${result.currentYear} 年官方休市安排，尾盘扫描已保守停用；联网后点击“立即同步”。`;
+}
+
+async function loadTradingCalendar({ force = false } = {}) {
+  if (!window.hengce.tradingCalendar || state.tradingCalendarLoading) return;
+  state.tradingCalendarLoading = true;
+  renderTradingCalendarStatus();
+  try {
+    const result = await window.hengce.tradingCalendar({ force });
+    if (result?.calendar) mergeOfficialCalendar(result.calendar);
+    state.tradingCalendar = result;
+  } catch (error) {
+    state.tradingCalendar = {
+      status: "unavailable",
+      currentYear: marketParts().year,
+      covered: false,
+      error: friendlyMarketError(error)
+    };
+  } finally {
+    state.tradingCalendarLoading = false;
+    renderTradingCalendarStatus();
+    if (state.activeView === "overnight") {
+      state.overnight = null;
+      loadOvernight({ force: true });
+    }
+    scheduleOvernightRefresh();
+  }
 }
 
 function saveUiState() {
@@ -4371,6 +4437,9 @@ function bindEvents() {
     applyThemePreference(event.currentTarget.value);
     showToast(`界面已切换为${event.currentTarget.selectedOptions[0].textContent}`);
   });
+  $("#refresh-trading-calendar").addEventListener("click", () =>
+    loadTradingCalendar({ force: true })
+  );
   $("#save-ai-settings").addEventListener("click", saveAiConfiguration);
   $("#test-ai-connection").addEventListener("click", testAiConfiguration);
   $("#delete-ai-key").addEventListener("click", removeAiKey);
@@ -4544,6 +4613,8 @@ renderHoldings();
 renderWatchlist();
 renderPortfolioRisk();
 renderAiPage();
+renderTradingCalendarStatus();
+loadTradingCalendar();
 loadAiSettings();
 refreshIcons();
 updateOvernightClock();

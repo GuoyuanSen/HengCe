@@ -5,6 +5,11 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function createTradingCalendar() {
   const MARKET_TIME_ZONE = "Asia/Shanghai";
   const KNOWN_YEARS = new Set([2025, 2026]);
+  const DYNAMIC_DATES_BY_YEAR = new Map();
+  const CALENDAR_METADATA = new Map([
+    [2025, { source: "内置交易所年度休市安排", synced: false }],
+    [2026, { source: "内置交易所年度休市安排", synced: false }]
+  ]);
   const CLOSED_DATES = new Set([
     // 2025 沪深交易所年度休市安排（仅列工作日休市日期）
     "2025-01-01",
@@ -57,20 +62,68 @@
     };
   }
 
+  function mergeOfficialCalendar(calendar = {}) {
+    const year = Number(calendar.year);
+    const dates = Array.isArray(calendar.closedDates)
+      ? [...new Set(calendar.closedDates.map(String))]
+      : [];
+    if (
+      !Number.isInteger(year) ||
+      year < 2024 ||
+      year > 2100 ||
+      dates.length < 5 ||
+      dates.length > 80 ||
+      dates.some((date) => !new RegExp(`^${year}-\\d{2}-\\d{2}$`).test(date))
+    ) {
+      return false;
+    }
+    for (const date of [...CLOSED_DATES]) {
+      if (date.startsWith(`${year}-`)) CLOSED_DATES.delete(date);
+    }
+    dates.forEach((date) => CLOSED_DATES.add(date));
+    DYNAMIC_DATES_BY_YEAR.set(year, new Set(dates));
+    KNOWN_YEARS.add(year);
+    CALENDAR_METADATA.set(year, {
+      source: String(calendar.sourceName || calendar.source || "交易所官方休市安排"),
+      sourceUrl: String(calendar.sourceUrl || ""),
+      fetchedAt: String(calendar.fetchedAt || ""),
+      synced: true
+    });
+    return true;
+  }
+
+  function calendarCoverage(year) {
+    const normalized = Number(year);
+    return {
+      year: normalized,
+      covered: KNOWN_YEARS.has(normalized),
+      ...(CALENDAR_METADATA.get(normalized) || { source: "尚未取得官方日历", synced: false })
+    };
+  }
+
   function tradingDayStatus(value = new Date()) {
     const parts = marketParts(value);
-    const confidence = KNOWN_YEARS.has(parts.year) ? "official" : "estimated";
+    const confidence = KNOWN_YEARS.has(parts.year) ? "official" : "unverified";
     if (parts.weekday === 0 || parts.weekday === 6) {
       return { ...parts, isTradingDay: false, reason: "weekend", label: "周末休市", confidence };
     }
     if (CLOSED_DATES.has(parts.dateKey)) {
       return { ...parts, isTradingDay: false, reason: "holiday", label: "交易所休市", confidence: "official" };
     }
+    if (!KNOWN_YEARS.has(parts.year)) {
+      return {
+        ...parts,
+        isTradingDay: false,
+        reason: "calendar-unverified",
+        label: "交易日历待同步",
+        confidence
+      };
+    }
     return {
       ...parts,
       isTradingDay: true,
       reason: "open",
-      label: confidence === "official" ? "交易日" : "预计交易日",
+      label: "交易日",
       confidence
     };
   }
@@ -82,16 +135,20 @@
       cursor.setUTCDate(cursor.getUTCDate() + 1);
       const dateKey = cursor.toISOString().slice(0, 10);
       const weekday = cursor.getUTCDay();
+      if (!KNOWN_YEARS.has(cursor.getUTCFullYear())) return null;
       if (weekday !== 0 && weekday !== 6 && !CLOSED_DATES.has(dateKey)) return dateKey;
     }
     return null;
   }
 
   return {
+    CALENDAR_METADATA,
     CLOSED_DATES,
     KNOWN_YEARS,
     MARKET_TIME_ZONE,
+    calendarCoverage,
     marketParts,
+    mergeOfficialCalendar,
     nextTradingDateKey,
     tradingDayStatus
   };

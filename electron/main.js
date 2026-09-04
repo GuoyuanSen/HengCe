@@ -77,6 +77,16 @@ const {
   eventInterpretationInstructions,
   normalizeEventInterpretation
 } = require("../src/intelligence.js");
+const {
+  calendarCoverage,
+  marketParts,
+  mergeOfficialCalendar
+} = require("../src/trading_calendar.js");
+const {
+  CALENDAR_SOURCE_URL,
+  normalizeCalendarPayload,
+  parseSseCalendarHtml
+} = require("./trading_calendar_sync.js");
 
 const APP_ID = "com.guoyuansen.hengce";
 const FRIENDLY_MARKET_ERROR = "行情服务暂时无响应，请检查网络后重试。";
@@ -99,6 +109,7 @@ let trayHintShown = false;
 let isQuitting = false;
 let sessionAiKey = "";
 const responseCache = new Map();
+let calendarSyncPromise = null;
 
 async function cachedRequest(key, ttl, loader, force = false) {
   const now = Date.now();
@@ -175,6 +186,88 @@ function requestJSON(url, options = {}) {
     },
     parse: JSON.parse
   });
+}
+
+function tradingCalendarCachePath() {
+  return path.join(app.getPath("userData"), "trading-calendar.json");
+}
+
+function readTradingCalendarCache() {
+  try {
+    return normalizeCalendarPayload(
+      JSON.parse(fs.readFileSync(tradingCalendarCachePath(), "utf8"))
+    );
+  } catch {
+    return null;
+  }
+}
+
+function writeTradingCalendarCache(calendar) {
+  const destination = tradingCalendarCachePath();
+  const temporary = `${destination}.tmp`;
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  fs.writeFileSync(temporary, `${JSON.stringify(calendar, null, 2)}\n`, { mode: 0o600 });
+  fs.renameSync(temporary, destination);
+}
+
+function installCachedTradingCalendar() {
+  const calendar = readTradingCalendarCache();
+  if (calendar) mergeOfficialCalendar(calendar);
+  return calendar;
+}
+
+function publicTradingCalendarStatus(calendar, status, error = "") {
+  const currentYear = marketParts().year;
+  const coverage = calendarCoverage(currentYear);
+  return {
+    status,
+    currentYear,
+    covered: coverage.covered,
+    coverage,
+    calendar: calendar || null,
+    error: String(error || "")
+  };
+}
+
+async function syncTradingCalendar(options = {}) {
+  const force = options.force === true;
+  const cached = installCachedTradingCalendar();
+  const currentYear = marketParts().year;
+  const fetchedAt = new Date(cached?.fetchedAt || 0).getTime();
+  const fresh = Number.isFinite(fetchedAt) && Date.now() - fetchedAt < 7 * 86400000;
+  if (!force && cached?.year >= currentYear && fresh) {
+    return publicTradingCalendarStatus(cached, "cached");
+  }
+  if (calendarSyncPromise) return calendarSyncPromise;
+  calendarSyncPromise = (async () => {
+    try {
+      const html = await requestData(CALENDAR_SOURCE_URL, {
+        headers: { Accept: "text/html,application/xhtml+xml" },
+        timeoutMs: 8000,
+        attempts: 2
+      });
+      const calendar = parseSseCalendarHtml(html);
+      if (calendar.year < currentYear) {
+        throw new Error(`交易所页面尚未发布 ${currentYear} 年休市安排`);
+      }
+      mergeOfficialCalendar(calendar);
+      writeTradingCalendarCache(calendar);
+      return publicTradingCalendarStatus(calendar, "online");
+    } catch (error) {
+      if (cached?.year >= currentYear) {
+        return publicTradingCalendarStatus(cached, "stale-cache", error?.message);
+      }
+      const coverage = calendarCoverage(currentYear);
+      return publicTradingCalendarStatus(
+        null,
+        coverage.covered ? "builtin" : "unavailable",
+        error?.message
+      );
+    }
+  })().finally(() => {
+    calendarSyncPromise = null;
+  });
+  return calendarSyncPromise;
 }
 
 async function firstAvailable(label, providers) {
@@ -1493,6 +1586,7 @@ app.on("before-quit", () => {
   isQuitting = true;
 });
 if (hasSingleInstanceLock) app.whenReady().then(() => {
+  installCachedTradingCalendar();
   ipcMain.handle("market:quote", (_, code, options = {}) =>
     cachedRequest(`quote:${code}`, 15000, () => fetchQuote(code), options.force)
   );
@@ -1521,14 +1615,15 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   ipcMain.handle("market:recommendations", (_, options = {}) =>
     cachedRequest("recommendations", 600000, () => fetchRecommendations(), options.force)
   );
-  ipcMain.handle("market:overnight", (_, options = {}) =>
-    cachedRequest(
+  ipcMain.handle("market:overnight", async (_, options = {}) => {
+    await syncTradingCalendar();
+    return cachedRequest(
       `overnight:${normalizeMarketScope(options.marketScope)}`,
       15000,
       () => fetchOvernightScan(options),
       options.force
-    )
-  );
+    );
+  });
   ipcMain.handle("market:profile", (_, code, options = {}) =>
     cachedRequest(`profile:${code}`, 1800000, () => fetchStockProfile(code), options.force)
   );
@@ -1549,6 +1644,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   });
   ipcMain.handle("system:update-check", () => checkForUpdate());
   ipcMain.handle("system:app-version", () => app.getVersion());
+  ipcMain.handle("system:trading-calendar", (_, options = {}) =>
+    syncTradingCalendar(options)
+  );
   ipcMain.handle("system:update-download", (event) =>
     downloadLatestUpdate(event.sender)
   );
@@ -1566,6 +1664,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   ipcMain.handle("ai:intelligence", (_, payload = {}) => runAiIntelligence(payload));
 
   createWindow();
+  syncTradingCalendar().catch(() => {});
   createWindowsTray();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

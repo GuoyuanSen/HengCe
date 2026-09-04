@@ -309,6 +309,15 @@ test("appearance supports system light and dark themes", () => {
   assert.match(renderer, /function applyThemePreference/);
 });
 
+test("trading calendar sync is official, cached, visible and fail-closed", () => {
+  assert.match(preload, /tradingCalendar:\s*\(options/);
+  assert.match(main, /system:trading-calendar/);
+  assert.match(main, /syncTradingCalendar/);
+  assert.match(html, /id="trading-calendar-status"/);
+  assert.match(html, /id="refresh-trading-calendar"/);
+  assert.match(renderer, /mergeOfficialCalendar/);
+});
+
 test("sidebar exposes version and updates while holdings accept name search", () => {
   assert.match(html, /id="sidebar-version"/);
   assert.match(html, /id="sidebar-check-update"/);

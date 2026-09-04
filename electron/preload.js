@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld("hengce", {
   openExternal: (url) => ipcRenderer.invoke("system:open-external", url),
   checkForUpdate: () => ipcRenderer.invoke("system:update-check"),
   appVersion: () => ipcRenderer.invoke("system:app-version"),
+  tradingCalendar: (options = {}) => ipcRenderer.invoke("system:trading-calendar", options),
   downloadUpdate: () => ipcRenderer.invoke("system:update-download"),
   installUpdate: () => ipcRenderer.invoke("system:update-install"),
   setWindowPreferences: (preferences) =>

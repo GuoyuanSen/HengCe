@@ -1242,6 +1242,8 @@ h2 {
   font-size: 11px;
 }
 
+.data-confidence.low { color: var(--red); }
+
 .valuation-content {
   min-height: 132px;
 }
@@ -3554,6 +3556,14 @@ html[data-platform="win32"] .windows-only {
 }
 
 .preference-select select { min-width: 120px; }
+
+.calendar-preference-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.calendar-preference-actions .data-confidence { white-space: nowrap; }
 
 html[data-theme="dark"] ::-webkit-scrollbar {
   width: 11px;
