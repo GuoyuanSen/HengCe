@@ -114,6 +114,8 @@ const {
 
 const APP_ID = "com.guoyuansen.hengce";
 const FRIENDLY_MARKET_ERROR = "行情服务暂时无响应，请检查网络后重试。";
+const AI_CONNECTION_TIMEOUT_MS = 45000;
+const AI_ANALYSIS_TIMEOUT_MS = 90000;
 const TENCENT_HEADERS = {
   Accept: "*/*",
   Referer: "https://stockapp.finance.qq.com/"
@@ -1463,7 +1465,7 @@ function sanitizedAiPayload(payload, includePosition) {
   return clone;
 }
 
-async function postAiResponse(settings, apiKey, body, timeoutMs = 45000) {
+async function postAiResponse(settings, apiKey, body, timeoutMs = AI_ANALYSIS_TIMEOUT_MS) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const requestBody = JSON.stringify(body);
@@ -1496,7 +1498,9 @@ async function postAiResponse(settings, apiKey, body, timeoutMs = 45000) {
     }
     throw new Error("AI 服务复核后仍未通过，请稍后重试");
   } catch (error) {
-    if (error?.name === "AbortError") throw new Error("AI 分析超时，请检查网络或稍后重试");
+    if (error?.name === "AbortError") {
+      throw new Error(`AI 分析等待 ${Math.round(timeoutMs / 1000)} 秒仍未完成，请检查网络或稍后重试`);
+    }
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -1514,7 +1518,7 @@ async function testAiConnection() {
     max_output_tokens: 32,
     instructions: "这是连接测试。请只回复：连接成功。",
     input: "测试衡策 AI 追踪连接"
-  });
+  }, AI_CONNECTION_TIMEOUT_MS);
   return { ok: true, model: settings.model, endpoint: new URL(settings.baseUrl).host };
 }
 

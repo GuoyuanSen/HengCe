@@ -284,6 +284,9 @@ test("AI tracking uses encrypted main-process settings and keeps a local fallbac
   assert.match(html, /id="ai-holdings-warning"/);
   assert.match(renderer, /aiConfigurationFormIsDirty/);
   assert.match(renderer, /连接成功.*实际目标/);
+  assert.match(main, /AI_ANALYSIS_TIMEOUT_MS\s*=\s*90000/);
+  assert.match(main, /AI_CONNECTION_TIMEOUT_MS\s*=\s*45000/);
+  assert.match(main, /等待.*秒仍未完成/);
   assert.doesNotMatch(renderer, /localStorage\.setItem\([^\n]*apiKey/i);
 });
 

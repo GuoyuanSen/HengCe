@@ -499,10 +499,10 @@ if (!window.hengce && isBrowserPreview) {
     notify: async () => true,
     openExternal: async (url) => window.open(url, "_blank"),
     checkForUpdate: async () => ({
-      currentVersion: "0.8.0",
-      latestVersion: "0.8.0",
-      tagName: "v0.8.0",
-      releaseName: "衡策 v0.8.0",
+      currentVersion: "0.8.1",
+      latestVersion: "0.8.1",
+      tagName: "v0.8.1",
+      releaseName: "衡策 v0.8.1",
       releaseNotes: "新增应用内更新检查、下载进度和 SHA-256 完整性校验。",
       assetName: "HengCe-Apple-Silicon.dmg",
       assetSize: 136e6,
@@ -510,7 +510,7 @@ if (!window.hengce && isBrowserPreview) {
       downloadable: true,
       available: false
     }),
-    appVersion: async () => "0.8.0",
+    appVersion: async () => "0.8.1",
     downloadUpdate: async () => ({ downloaded: true, fileName: "HengCe-Apple-Silicon.dmg" }),
     installUpdate: async () => ({ opened: true, willQuit: false }),
     saveBackup: async () => ({ saved: true, fileName: "HengCe-Demo.hengce-backup", encrypted: false }),
