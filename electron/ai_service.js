@@ -69,7 +69,7 @@ function publicAiSettings(settings, { hasApiKey = false, secureStorage = false }
 function safeApiError(status, payload) {
   const message = String(payload?.error?.message || payload?.message || "").trim();
   const code = String(payload?.error?.code || "").trim();
-  if (status === 401) return "API Key 无效、已失效或不属于当前接口地址";
+  if (status === 401) return "接口暂未识别此 API Key，可能已失效、权限尚未同步或不属于当前地址";
   if (status === 403) return "API Key 已被识别，但当前 API 项目没有该模型的访问权限";
   if (status === 404 && code === "model_not_found") {
     return "模型名称不存在，或当前 API 项目没有该模型权限；请更换模型后重试";
@@ -79,6 +79,10 @@ function safeApiError(status, payload) {
   return message ? `AI 服务返回 ${status}：${message.slice(0, 180)}` : `AI 服务返回 ${status}`;
 }
 
+function shouldRetryAiStatus(status, attempt = 0) {
+  return attempt === 0 && [401, 502, 503, 504].includes(Number(status));
+}
+
 module.exports = {
   DEFAULT_AI_SETTINGS,
   normalizeAiSettings,
@@ -86,5 +90,6 @@ module.exports = {
   parseJsonResponse,
   publicAiSettings,
   responsesUrl,
-  safeApiError
+  safeApiError,
+  shouldRetryAiStatus
 };

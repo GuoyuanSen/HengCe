@@ -69,7 +69,8 @@ const {
   parseJsonResponse,
   publicAiSettings,
   responsesUrl,
-  safeApiError
+  safeApiError,
+  shouldRetryAiStatus
 } = require("./ai_service.js");
 const { parseCompanyOrganization, parseStockAnnouncements, profileSecucode } = require("./company.js");
 const {
@@ -1465,27 +1466,35 @@ function sanitizedAiPayload(payload, includePosition) {
 async function postAiResponse(settings, apiKey, body, timeoutMs = 45000) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const requestBody = JSON.stringify(body);
   try {
-    const response = await net.fetch(responsesUrl(settings.baseUrl), {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "User-Agent": `HengCe/${app.getVersion()}`
-      },
-      body: JSON.stringify(body)
-    });
-    const raw = await response.text();
-    let payload = {};
-    try {
-      payload = raw ? JSON.parse(raw) : {};
-    } catch {
-      payload = {};
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await net.fetch(responsesUrl(settings.baseUrl), {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "User-Agent": `HengCe/${app.getVersion()}`
+        },
+        body: requestBody
+      });
+      const raw = await response.text();
+      let payload = {};
+      try {
+        payload = raw ? JSON.parse(raw) : {};
+      } catch {
+        payload = {};
+      }
+      if (response.ok) return payload;
+      if (shouldRetryAiStatus(response.status, attempt)) {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        continue;
+      }
+      throw new Error(safeApiError(response.status, payload));
     }
-    if (!response.ok) throw new Error(safeApiError(response.status, payload));
-    return payload;
+    throw new Error("AI 服务复核后仍未通过，请稍后重试");
   } catch (error) {
     if (error?.name === "AbortError") throw new Error("AI 分析超时，请检查网络或稍后重试");
     throw error;

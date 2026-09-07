@@ -108,20 +108,30 @@ test("trend parser reads minute close and yellow average price", () => {
 
 test("snapshot allows zero signals and caps an industry at two", () => {
   const candidate = (code, industry, passes = true) => ({
-    candidate: { code, name: code, industry, changePercent: 4, volumeRatio: 1.5, turnoverRate: 7.5, amount: 1e9, floatMarketCap: 1e10 },
+    candidate: { code, name: code, industry, price: 10.4, changePercent: 4, volumeRatio: 1.5, turnoverRate: 7.5, amount: 1e9, floatMarketCap: 1e10 },
     limitUp: { found: true, sessionsAgo: 2 },
-    intraday: { passes, aboveRatio: 1 }
+    intraday: { passes, aboveRatio: 1, currentAbove: passes, currentAveragePrice: 10.3 }
   });
   assert.equal(buildOvernightSnapshot([candidate("600000", "银行", false)]).picks.length, 0);
   const snapshot = buildOvernightSnapshot([
     candidate("600000", "软件"), candidate("600001", "软件"), candidate("600002", "软件"), candidate("600003", "银行")
   ]);
   assert.deepEqual(snapshot.picks.map((item) => item.code), ["600000", "600001", "600003"]);
+  assert.equal(snapshot.picks.every((item) => item.executionPlan?.generatedBy === "quant"), true);
+  assert.equal(snapshot.summary.funnel.executionPlan, 4);
   const nearMiss = buildOvernightSnapshot([
     candidate("600004", "软件", false)
   ]);
   assert.equal(nearMiss.nearMisses.length, 1);
   assert.match(nearMiss.nearMisses[0].failedRules[0], /均价线上方/);
+
+  const capped = candidate("600005", "软件");
+  capped.candidate.price = 10.498;
+  capped.candidate.changePercent = 4.98;
+  capped.intraday.currentAveragePrice = 10.4;
+  const cappedSnapshot = buildOvernightSnapshot([capped]);
+  assert.equal(cappedSnapshot.picks.length, 0);
+  assert.equal(cappedSnapshot.nearMisses[0].executionPlan.status, "no-chase");
 });
 
 test("overnight validation exits at next open and deducts costs", () => {

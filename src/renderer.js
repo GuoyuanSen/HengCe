@@ -290,6 +290,10 @@ if (!window.hengce && isBrowserPreview) {
           industry: "软件开发",
           momentum20: 0.094,
           risk: "中等",
+          support: last.close - 0.9,
+          sma20: last.close - 0.45,
+          atr14: 0.82,
+          volumeRatio: 1.31,
           pressure: 31.8,
           riskLine: 27.9,
           factors: { trend: 88, momentum: 82, volume: 76, liquidity: 71, risk: 64, valuation: 59 },
@@ -310,6 +314,10 @@ if (!window.hengce && isBrowserPreview) {
           industry: "消费电子",
           momentum20: 0.071,
           risk: "较低",
+          support: 41.2,
+          sma20: 42.1,
+          atr14: 1.05,
+          volumeRatio: 1.21,
           pressure: 45.2,
           riskLine: 39.6,
           factors: { trend: 84, momentum: 74, volume: 68, liquidity: 88, risk: 81, valuation: 63 },
@@ -359,6 +367,7 @@ if (!window.hengce && isBrowserPreview) {
           code: "603039",
           name: "泛微网络",
           industry: "软件开发",
+          price: 40.45,
           score: 86,
           changePercent: 4.12,
           volumeRatio: 1.46,
@@ -372,6 +381,7 @@ if (!window.hengce && isBrowserPreview) {
           code: "002475",
           name: "立讯精密",
           industry: "消费电子",
+          price: 43.05,
           score: 79,
           changePercent: 3.64,
           volumeRatio: 1.22,
@@ -421,7 +431,7 @@ if (!window.hengce && isBrowserPreview) {
       sourceStatus: { loaded: 4, requested: 4, partial: false },
       events: [
         { id: "demo-report", code: codes[0] || "603039", name: "泛微网络", type: "earnings", typeLabel: "财报披露", title: "2026年三季报预约披露", scheduledAt: "2026-10-28", impact: "mixed", detail: "预约日期可能调整", source: "浏览器演示披露日历", manual: false },
-        { id: "demo-unlock", code: codes[1] || codes[0] || "002475", name: "立讯精密", type: "unlock", typeLabel: "限售解禁", title: "股权激励限售股份解禁", scheduledAt: "2026-09-18", impact: "negative", detail: "解禁不等于实际减持", source: "浏览器演示披露日历", manual: false }
+        { id: "demo-unlock", code: codes[1] || codes[0] || "002475", name: "立讯精密", type: "unlock", typeLabel: "限售解禁", title: "股权激励限售股份解禁", scheduledAt: new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10), impact: "negative", detail: "解禁不等于实际减持", source: "浏览器演示披露日历", manual: false }
       ],
       note: "浏览器演示催化剂日历"
     }),
@@ -489,10 +499,10 @@ if (!window.hengce && isBrowserPreview) {
     notify: async () => true,
     openExternal: async (url) => window.open(url, "_blank"),
     checkForUpdate: async () => ({
-      currentVersion: "0.7.2",
-      latestVersion: "0.7.2",
-      tagName: "v0.7.2",
-      releaseName: "衡策 v0.7.2",
+      currentVersion: "0.8.0",
+      latestVersion: "0.8.0",
+      tagName: "v0.8.0",
+      releaseName: "衡策 v0.8.0",
       releaseNotes: "新增应用内更新检查、下载进度和 SHA-256 完整性校验。",
       assetName: "HengCe-Apple-Silicon.dmg",
       assetSize: 136e6,
@@ -500,7 +510,7 @@ if (!window.hengce && isBrowserPreview) {
       downloadable: true,
       available: false
     }),
-    appVersion: async () => "0.7.2",
+    appVersion: async () => "0.8.0",
     downloadUpdate: async () => ({ downloaded: true, fileName: "HengCe-Apple-Silicon.dmg" }),
     installUpdate: async () => ({ opened: true, willQuit: false }),
     saveBackup: async () => ({ saved: true, fileName: "HengCe-Demo.hengce-backup", encrypted: false }),
@@ -581,6 +591,15 @@ const {
   setPrimaryHolding
 } = window.HengCePreferences;
 const { buildObservationPlan } = window.HengCeTradePlan;
+const {
+  buildOvernightExecutionPlan,
+  buildSwingExecutionPlan,
+  compareRecommendationRanks,
+  evaluateCatalystRisk,
+  evaluatePortfolioConstraint,
+  recordRankingSnapshot,
+  watchPlanState
+} = window.HengCeExecutionPlan;
 const {
   applyTradeToHoldings,
   buildTradeReview,
@@ -672,6 +691,7 @@ const storedTradePlans = readJSON("hengce.tradePlans.v1", []);
 const storedManualCatalysts = readJSON("hengce.manualCatalysts.v1", []);
 const storedSignalJournal = readJSON("hengce.signalJournal.v1", []);
 const storedCatalystSnapshot = readJSON("hengce.catalysts.snapshot.v1", null);
+const storedRecommendationHistory = readJSON("hengce.recommendations.history.v1", []);
 const OVERNIGHT_MARKET_SCOPES = ["main", "main-growth", "main-star", "all"];
 const storedOvernightMarketScope = OVERNIGHT_MARKET_SCOPES.includes(storedUi.overnightMarketScope)
   ? storedUi.overnightMarketScope
@@ -749,9 +769,16 @@ const state = {
   recommendations: null,
   recommendationsLoading: false,
   recommendationsError: "",
+  recommendationHistory: Array.isArray(storedRecommendationHistory) ? storedRecommendationHistory.slice(0, 24) : [],
+  recommendationCatalysts: null,
+  recommendationCatalystsLoading: false,
+  expandedRecommendationCode: null,
   overnight: null,
   overnightLoading: false,
   overnightError: "",
+  overnightCatalysts: null,
+  overnightCatalystsLoading: false,
+  expandedOvernightCode: null,
   overnightMarketScope: storedOvernightMarketScope,
   overnightStreaks: new Map(
     storedOvernightStreaks?.date === todayKey() && storedOvernightStreaks?.marketScope === storedOvernightMarketScope
@@ -2180,6 +2207,104 @@ async function loadIntelligence({ force = false, background = false } = {}) {
   }
 }
 
+function executionCatalystEvents(snapshot) {
+  return mergeCatalysts(state.manualCatalysts, snapshot?.events || []);
+}
+
+async function loadExecutionCatalysts(kind, codes, { force = false } = {}) {
+  const normalized = [...new Set((codes || []).map(normalizeCode).filter(Boolean))].slice(0, 16);
+  const snapshotKey = kind === "overnight" ? "overnightCatalysts" : "recommendationCatalysts";
+  const loadingKey = kind === "overnight" ? "overnightCatalystsLoading" : "recommendationCatalystsLoading";
+  const existing = state[snapshotKey];
+  const sameCodes = Array.isArray(existing?.codes) && [...existing.codes].sort().join(",") === [...normalized].sort().join(",");
+  if (!normalized.length) {
+    state[snapshotKey] = { asOf: new Date().toISOString(), codes: [], events: [], sourceStatus: { partial: false } };
+    return;
+  }
+  if (state[loadingKey] || (sameCodes && !freshness(existing.asOf, 30).stale && !force)) return;
+  state[loadingKey] = true;
+  kind === "overnight" ? renderOvernight() : renderRecommendations();
+  try {
+    state[snapshotKey] = await window.hengce.catalysts(normalized, { force });
+  } catch {
+    state[snapshotKey] = null;
+  } finally {
+    state[loadingKey] = false;
+    kind === "overnight" ? renderOvernight() : renderRecommendations();
+  }
+}
+
+function recommendationExecutionContext(item) {
+  const executionPlan = buildSwingExecutionPlan(item, state.settings);
+  const portfolio = evaluatePortfolioConstraint({ ...item, executionPlan }, {
+    holdings: state.holdings,
+    quotes: state.quotes,
+    profiles: state.profiles,
+    portfolioRisk: state.portfolioRisk,
+    breadth: state.breadth,
+    settings: state.settings
+  });
+  const catalyst = evaluateCatalystRisk(
+    item.code,
+    executionCatalystEvents(state.recommendationCatalysts),
+    { loaded: Boolean(state.recommendationCatalysts) && !state.recommendationCatalystsLoading }
+  );
+  return { executionPlan, portfolio, catalyst };
+}
+
+function overnightExecutionContext(item) {
+  const executionPlan = item.executionPlan || buildOvernightExecutionPlan(item);
+  const portfolio = evaluatePortfolioConstraint({ ...item, executionPlan }, {
+    holdings: state.holdings,
+    quotes: state.quotes,
+    profiles: state.profiles,
+    portfolioRisk: state.portfolioRisk,
+    breadth: state.breadth,
+    settings: state.settings
+  });
+  const catalyst = evaluateCatalystRisk(
+    item.code,
+    executionCatalystEvents(state.overnightCatalysts),
+    { horizonDays: 3, loaded: Boolean(state.overnightCatalysts) && !state.overnightCatalystsLoading }
+  );
+  return { executionPlan, portfolio, catalyst };
+}
+
+function executionConstraintClass(status) {
+  if (["blocked", "risk"].includes(status)) return "negative";
+  if (["caution", "unknown"].includes(status)) return "warning";
+  return "positive";
+}
+
+function executionDetailList(items, emptyText) {
+  return items?.length
+    ? `<ul>${items.map((item) => `<li>${escapeHTML(item)}</li>`).join("")}</ul>`
+    : `<span class="muted">${escapeHTML(emptyText)}</span>`;
+}
+
+function recommendationDetailHtml(item, { executionPlan, portfolio, catalyst }) {
+  const validation = item.validation || {};
+  const factorLabels = [
+    ["趋势", item.factors?.trend],
+    ["动量", item.factors?.momentum],
+    ["量能", item.factors?.volume],
+    ["流动性", item.factors?.liquidity],
+    ["风险", item.factors?.risk],
+    ["估值", item.factors?.valuation]
+  ];
+  const catalystDetails = (catalyst.events || []).map((event) =>
+    `${event.days === 0 ? "今天" : `${event.days}天后`} · ${event.title} · ${event.source || "公开披露"}`
+  );
+  return `
+    <div class="execution-detail-grid">
+      <article><h3>量化价格计划</h3><div class="execution-levels"><span>观察区<strong>${executionPlan.range ? `${number(executionPlan.range.low)}–${number(executionPlan.range.high)}` : "暂未形成"}</strong></span><span>突破<strong>${number(executionPlan.breakout)}</strong></span><span>不追高<strong>${number(executionPlan.chaseCap)}</strong></span><span>失效<strong>${number(executionPlan.invalidation)}</strong></span></div><p>${escapeHTML(executionPlan.reason || "等待量价结构形成")}</p><small>${escapeHTML(executionPlan.method || "确定性量化规则")}</small></article>
+      <article><h3>评分与入选依据</h3><div class="execution-factor-grid">${factorLabels.map(([label, value]) => `<span>${label}<strong>${number(value, 0)}</strong></span>`).join("")}</div>${executionDetailList(item.reasons, "暂无额外入选理由")}</article>
+      <article><h3>历史前向验证</h3><div class="execution-validation-grid">${[5, 10, 20].map((horizon) => { const row = validation[horizon === 5 ? "fiveDay" : horizon === 10 ? "tenDay" : "twentyDay"] || {}; return `<span>${horizon}日<strong>${row.hitRate == null ? "样本不足" : `胜率 ${plainPercent(row.hitRate, true)}`}</strong><small>${row.averageReturn == null ? "--" : `均值 ${percent(row.averageReturn, true)} · 超额 ${percent(row.averageExcessReturn, true)} · ${row.sampleCount}次`}</small></span>`; }).join("")}</div><small>${escapeHTML(validation.limitations || "历史表现不代表未来结果")}</small></article>
+      <article><h3>组合与事件约束</h3><div class="detail-constraint-heading"><span class="${executionConstraintClass(portfolio.status)}">${escapeHTML(portfolio.label)}</span><span class="${executionConstraintClass(catalyst.status)}">${escapeHTML(catalyst.label)}</span></div>${executionDetailList([...(portfolio.reasons || []), portfolio.suggestedShares ? `当前参数下参考新增余量 ${portfolio.suggestedShares} 股` : "", ...catalystDetails].filter(Boolean), "当前没有新增约束")}</article>
+    </div>
+  `;
+}
+
 function renderRecommendations() {
   const loading = $("#recommendations-loading");
   const content = $("#recommendations-content");
@@ -2202,18 +2327,24 @@ function renderRecommendations() {
     : "";
   staleWarning.classList.toggle("hidden", !dataFreshness.stale);
   const sourceStatus = snapshot.sourceStatus || {};
+  const allRows = snapshot.recommendations || [];
+  const executionByCode = new Map(allRows.map((item) => [item.code, recommendationExecutionContext(item)]));
+  const changedRanks = allRows.filter((item) => ["new", "up"].includes(item.rankState)).length;
+  const executableCount = allRows.filter((item) => {
+    const context = executionByCode.get(item.code);
+    return context?.executionPlan?.actionable && context.portfolio.status !== "blocked" && context.catalyst.status !== "risk";
+  }).length;
   $("#recommendations-summary").innerHTML = [
     hotspotStat("当前领先", summary.leadingStock, "综合因子排名第一"),
     hotspotStat("初筛样本", `${summary.candidatePool} 只`, "成交活跃且通过基础风控"),
-    hotspotStat("完成计算", `${summary.scannedCount} 只`, "读取至少60个交易日"),
-    hotspotStat("达到门槛", `${summary.qualifiedCount} 只`, "综合评分不低于55"),
+    hotspotStat("观察池", `${allRows.length} 只`, `${summary.qualifiedCount} 只达到评分门槛`),
+    hotspotStat("执行条件", `${executableCount} 只`, changedRanks ? `${changedRanks} 只新入选或排名上升` : "等待区间、组合与事件确认"),
     hotspotStat(
       "数据状态",
       dataFreshness.stale ? "已过期" : sourceStatus.partial ? "部分降级" : "最新",
       `${sourceStatus.loaded ?? "--"}/${sourceStatus.requested ?? "--"} 只完成历史计算`
     )
   ].join("");
-  const allRows = snapshot.recommendations || [];
   const industries = [...new Set(allRows.map((item) => item.industry).filter(Boolean))]
     .sort((left, right) => left.localeCompare(right, "zh-CN"));
   const industrySelect = $("#recommendation-industry");
@@ -2248,9 +2379,18 @@ function renderRecommendations() {
     ? rows
         .map((item, index) => {
           const scoreClass = item.score >= 75 ? "high" : "";
+          const context = executionByCode.get(item.code);
+          const { executionPlan, portfolio, catalyst } = context;
+          const rangeText = executionPlan.range
+            ? `${number(executionPlan.range.low)}–${number(executionPlan.range.high)}`
+            : "暂未形成";
+          const scoreDelta = Number.isFinite(item.scoreChange)
+            ? `${item.scoreChange >= 0 ? "+" : ""}${number(item.scoreChange, 0)}分`
+            : "";
+          const expanded = state.expandedRecommendationCode === item.code;
           return `
             <tr class="recommendation-row" data-code="${escapeHTML(item.code)}" tabindex="0" role="button" aria-label="分析 ${escapeHTML(item.name)} ${escapeHTML(item.code)}">
-              <td>${index + 1}</td>
+              <td><div class="recommendation-rank"><strong>${item.rank || index + 1}</strong><span class="${escapeHTML(item.rankState || "baseline")}">${escapeHTML(item.rankLabel || "建立基线")}</span>${scoreDelta ? `<small>${scoreDelta}</small>` : ""}</div></td>
               <td>
                 <div class="stock-cell">
                   <strong>${escapeHTML(item.name)}</strong>
@@ -2258,42 +2398,33 @@ function renderRecommendations() {
                 </div>
               </td>
               <td>
-                <div class="hotspot-score ${scoreClass}">
-                  <strong>${number(item.score, 0)}</strong>
-                  <span class="hotspot-score-track">
-                    <span style="width:${Math.max(0, Math.min(100, item.score))}%"></span>
-                  </span>
+                <div class="execution-plan-cell">
+                  <div><strong class="${directionClass(item.changePercent)}">${number(item.price)}</strong><small>${percent(item.changePercent)}</small><span class="execution-status ${escapeHTML(executionPlan.tone || "neutral")}">${escapeHTML(executionPlan.label)}</span></div>
+                  <span>观察 ${rangeText}</span>
                 </div>
               </td>
               <td>
-                <div class="factor-breakdown">
-                  <span title="趋势">趋 ${number(item.factors?.trend, 0)}</span>
-                  <span title="动量">动 ${number(item.factors?.momentum, 0)}</span>
-                  <span title="量能">量 ${number(item.factors?.volume, 0)}</span>
-                  <span title="风险控制">风 ${number(item.factors?.risk, 0)}</span>
+                <div class="recommendation-score-plan">
+                  <div class="recommendation-score-head"><div class="hotspot-score ${scoreClass}"><strong>${number(item.score, 0)}</strong><span class="hotspot-score-track"><span style="width:${Math.max(0, Math.min(100, item.score))}%"></span></span></div><span class="risk-pill risk-${item.risk === "较高" ? "high" : item.risk === "中等" ? "medium" : "low"}">${escapeHTML(item.risk)}</span></div>
+                  <small>${escapeHTML(item.trend || "量价结构待确认")}</small>
                 </div>
               </td>
-              <td>
-                <div class="validation-cell">
-                  <strong>${item.validation?.fiveDay?.hitRate == null ? "样本不足" : `5日胜率 ${plainPercent(item.validation.fiveDay.hitRate, true)}`}</strong>
-                  <small title="${escapeHTML(item.validation?.limitations || "")}">${item.validation?.twentyDay?.averageReturn == null ? "等待更多非重叠历史信号" : `20日净值 ${percent(item.validation.twentyDay.averageReturn, true)} · 超额 ${percent(item.validation.twentyDay.averageExcessReturn, true)} · ${item.validation.twentyDay.sampleCount}次`}</small>
-                </div>
-              </td>
-              <td><span class="risk-pill risk-${item.risk === "较高" ? "high" : item.risk === "中等" ? "medium" : "low"}">${escapeHTML(item.risk)}</span></td>
-              <td><div class="recommendation-reasons">${(item.reasons || []).map(escapeHTML).join(" · ") || "量价结构达到观察门槛"}</div></td>
+              <td><div class="execution-constraint-summary"><span class="${executionConstraintClass(portfolio.status)}">${escapeHTML(portfolio.label)}</span><span class="${executionConstraintClass(catalyst.status)}">${escapeHTML(catalyst.label)}</span><small>${escapeHTML(catalyst.status === "risk" ? catalyst.detail : portfolio.reasons[0] || `参考余量 ${portfolio.suggestedShares || 0} 股`)}</small></div></td>
               <td>
                 <div class="table-actions">
                   <button class="table-action watch-recommendation" data-code="${escapeHTML(item.code)}" title="加入观察" ${dataFreshness.stale || state.watchlist.some((entry) => entry.code === item.code) ? "disabled" : ""}>
                     <i data-lucide="bell-plus"></i>
                   </button>
+                  <button class="table-action toggle-recommendation-detail ${expanded ? "active" : ""}" data-code="${escapeHTML(item.code)}" title="${expanded ? "收起详情" : "展开详情"}" aria-expanded="${expanded}"><i data-lucide="chevron-down"></i></button>
                   <i class="recommendation-enter" data-lucide="chevron-right"></i>
                 </div>
               </td>
             </tr>
+            ${expanded ? `<tr class="execution-detail-row"><td colspan="6">${recommendationDetailHtml(item, context)}</td></tr>` : ""}
           `;
         })
         .join("")
-    : '<tr><td colspan="8" class="muted">当前筛选条件下没有可用标的</td></tr>';
+    : '<tr><td colspan="6" class="muted">当前筛选条件下没有可用标的</td></tr>';
   $$(".recommendation-row").forEach((row) => {
     row.addEventListener("click", (event) => {
       if (event.target.closest("button")) return;
@@ -2307,10 +2438,16 @@ function renderRecommendations() {
       }
     });
   });
+  $$(".toggle-recommendation-detail").forEach((button) => button.addEventListener("click", () => {
+    state.expandedRecommendationCode = state.expandedRecommendationCode === button.dataset.code ? null : button.dataset.code;
+    renderRecommendations();
+    refreshIcons();
+  }));
   $$(".watch-recommendation").forEach((button) =>
     button.addEventListener("click", () => {
       const item = allRows.find((entry) => entry.code === button.dataset.code);
       if (!item || state.watchlist.some((entry) => entry.code === item.code)) return;
+      const executionPlan = executionByCode.get(item.code)?.executionPlan || buildSwingExecutionPlan(item, state.settings);
       state.watchlist.push({
         code: item.code,
         name: item.name,
@@ -2319,6 +2456,8 @@ function renderRecommendations() {
         baselineScore: item.technicalScore ?? item.score,
         pressure: item.pressure,
         riskLine: item.riskLine,
+        executionPlan,
+        planSource: "A股优选",
         lastAlert: ""
       });
       writeJSON("hengce.watchlist.v1", state.watchlist);
@@ -2337,21 +2476,11 @@ function renderRecommendations() {
         minute: "2-digit"
       });
   $("#recommendations-note").textContent =
-    `数据时间 ${timestamp} · 候选池：${sourceStatus.candidateSource || "公开成交额榜"} · 历史：${sourceStatus.historySource || "公开前复权日线"}。历史验证使用当时可见量价、非重叠信号、交易成本和指数超额；历史PE按中性处理，候选仍存在当前活跃样本偏差。结果仅为量化观察池。`;
+    `数据时间 ${timestamp} · 候选池：${sourceStatus.candidateSource || "公开成交额榜"} · 历史：${sourceStatus.historySource || "公开前复权日线"}。排名变化相对上次成功刷新；观察区、突破位、不追高上限和失效位均由确定性量化规则生成，AI只解释、不参与定价。组合和事件提示不改变原始评分，结果仅为观察池。`;
 }
 
 function watchAlert(item, data) {
-  if (!data?.quote || !data?.model) return "等待行情";
-  if (Number.isFinite(item.riskLine) && data.quote.price <= item.riskLine) {
-    return "跌破风险线";
-  }
-  if (Number.isFinite(item.pressure) && data.quote.price >= item.pressure) {
-    return "突破压力位";
-  }
-  const scoreChange = data.model.score - (item.baselineScore ?? data.model.score);
-  if (scoreChange >= 10) return "评分明显提升";
-  if (scoreChange <= -10) return "评分明显下降";
-  return "观察中";
+  return watchPlanState(item, data);
 }
 
 function renderWatchlist() {
@@ -2368,15 +2497,13 @@ function renderWatchlist() {
     data: state.watchlistData.get(item.code),
     alert: watchAlert(item, state.watchlistData.get(item.code))
   }));
-  const alertCount = rows.filter(({ alert }) =>
-    !["观察中", "等待行情"].includes(alert)
-  ).length;
+  const alertCount = rows.filter(({ alert }) => alert.actionable).length;
   const scores = rows
     .map(({ data }) => data?.model?.score)
     .filter(Number.isFinite);
   $("#watchlist-summary").innerHTML = [
     hotspotStat("观察标的", `${rows.length} 只`, "仅保存在本机"),
-    hotspotStat("触发提醒", `${alertCount} 项`, "突破、风险线或评分变化"),
+    hotspotStat("触发提醒", `${alertCount} 项`, "进入区间、突破、失效或评分变化"),
     hotspotStat(
       "平均评分",
       scores.length ? number(scores.reduce((sum, value) => sum + value, 0) / scores.length, 0) : "--",
@@ -2390,14 +2517,15 @@ function renderWatchlist() {
   $("#watchlist-table-body").innerHTML = rows
     .map(({ item, data, alert }) => {
       const addedAt = new Date(item.addedAt);
-      const alertClass = alert === "观察中" ? "" : alert === "等待行情" ? "muted" : "alert-active";
+      const plan = alert.plan || item.executionPlan || {};
+      const rangeText = plan.range ? `${number(plan.range.low)}–${number(plan.range.high)}` : "暂未形成";
       return `
         <tr class="holding-row" data-code="${item.code}" tabindex="0" role="button" aria-label="分析 ${escapeHTML(item.name || item.code)}">
           <td><div class="stock-cell"><strong>${escapeHTML(item.name)}</strong><span>${escapeHTML(item.code)} · ${escapeHTML(item.industry)}</span></div></td>
-          <td class="${directionClass(data?.quote?.percentChange)}"><strong>${number(data?.quote?.price)}</strong><small>${percent(data?.quote?.percentChange)}</small></td>
+          <td class="${directionClass(data?.quote?.percentChange)}"><strong>${number(data?.quote?.price)}</strong><small>${percent(data?.quote?.percentChange)} · ${escapeHTML(marketTimestamp(data?.quote?.timestamp))}</small></td>
+          <td><div class="watch-plan-distance"><strong>${rangeText}</strong><span>${escapeHTML(alert.distance?.label || "等待区间")}</span><small>突破 ${number(plan.breakout)} · 失效 ${number(plan.invalidation || item.riskLine)}</small></div></td>
           <td><strong>${number(data?.model?.score, 0)}</strong><small>${escapeHTML(data?.model?.trend || "--")}</small></td>
-          <td>${number(item.pressure)} / ${number(item.riskLine)}</td>
-          <td><span class="watch-alert ${alertClass}">${escapeHTML(alert)}</span></td>
+          <td><span class="watch-alert ${escapeHTML(alert.tone || "neutral")}">${escapeHTML(alert.label)}</span><small class="watch-alert-detail">${escapeHTML(alert.detail || "")}</small></td>
           <td>${Number.isNaN(addedAt.getTime()) ? "--" : addedAt.toLocaleDateString("zh-CN")}</td>
           <td><div class="table-actions"><button class="secondary-button analyze-watch" data-code="${item.code}">分析</button><button class="table-action remove-watch" data-code="${item.code}" title="移除观察"><i data-lucide="trash-2"></i></button></div></td>
         </tr>
@@ -2464,10 +2592,16 @@ async function loadWatchlist({ force = false } = {}) {
     const { item, ...data } = result.value;
     state.watchlistData.set(item.code, data);
     const alert = watchAlert(item, data);
-    if (!["观察中", "等待行情"].includes(alert) && alert !== item.lastAlert) {
-      window.hengce.notify("衡策观察提醒", `${item.name}：${alert}`);
-      item.lastAlert = alert;
-    } else if (alert === "观察中") {
+    if (!item.executionPlan && alert.plan?.available) {
+      item.executionPlan = alert.plan;
+      item.planSource = item.planSource || "首次观察基线";
+      item.pressure = alert.plan.breakout || item.pressure;
+      item.riskLine = alert.plan.invalidation || item.riskLine;
+    }
+    if (alert.notify && alert.key !== item.lastAlert) {
+      window.hengce.notify("衡策观察提醒", `${item.name}：${alert.label} · ${alert.detail}`);
+      item.lastAlert = alert.key;
+    } else if (!alert.actionable) {
       item.lastAlert = "";
     }
   }
@@ -2643,6 +2777,8 @@ async function loadBreadth({ force = false } = {}) {
   } finally {
     state.breadthLoading = false;
     renderBreadth();
+    if (state.recommendations) renderRecommendations();
+    if (state.overnight) renderOvernight();
   }
 }
 
@@ -2719,14 +2855,27 @@ async function loadMacro({ force = false } = {}) {
 async function loadRecommendations({ force = false } = {}) {
   if (state.recommendations && !force) {
     renderRecommendations();
+    if (!state.recommendationCatalysts && !state.recommendationCatalystsLoading) {
+      loadExecutionCatalysts("recommendation", state.recommendations.recommendations?.map((item) => item.code));
+    }
+    if (!state.breadth && !state.breadthLoading) loadBreadth();
+    if (state.holdings.length && !state.portfolioRisk && !state.portfolioRiskLoading) updateHoldingQuotes();
     return;
   }
   state.recommendationsLoading = true;
   state.recommendationsError = "";
   renderRecommendations();
   try {
-    state.recommendations = await window.hengce.recommendations({ force });
-    captureRecommendationSignals(state.recommendations);
+    const snapshot = await window.hengce.recommendations({ force });
+    const previous = state.recommendationHistory[0] || null;
+    snapshot.recommendations = compareRecommendationRanks(snapshot.recommendations || [], previous);
+    state.recommendations = snapshot;
+    state.recommendationHistory = recordRankingSnapshot(state.recommendationHistory, snapshot);
+    writeJSON("hengce.recommendations.history.v1", state.recommendationHistory);
+    captureRecommendationSignals(snapshot);
+    loadExecutionCatalysts("recommendation", snapshot.recommendations.map((item) => item.code), { force });
+    if (!state.breadth && !state.breadthLoading) loadBreadth();
+    if (state.holdings.length && !state.portfolioRisk && !state.portfolioRiskLoading) updateHoldingQuotes();
   } catch (error) {
     state.recommendationsError = friendlyMarketError(error);
   } finally {
@@ -2830,7 +2979,10 @@ function renderOvernightForwardJournal() {
         const candidates = record.candidates || [];
         const outcomes = candidates.map((item) => item.outcome?.exit1000Return).filter(Number.isFinite);
         const average = outcomes.length ? outcomes.reduce((sum, value) => sum + value, 0) / outcomes.length : null;
-        const names = candidates.slice(0, 4).map((item) => item.name).join("、");
+        const names = candidates.slice(0, 4).map((item) => {
+          const range = item.executionPlan?.range;
+          return `${item.name}${range ? ` ${number(range.low)}–${number(range.high)}` : ""}`;
+        }).join("、");
         return `<tr>
           <td><strong>${escapeHTML(record.date)} ${escapeHTML(record.checkpoint)}</strong><small>${escapeHTML(record.marketScope === "main" ? "沪深主板" : "扩展市场")}</small></td>
           <td><strong>${candidates.length ? `${candidates.length} 只` : "0 只"}</strong><small>${escapeHTML(names || "严格条件下无信号")}</small></td>
@@ -2919,6 +3071,24 @@ function confirmOvernightPicks(snapshot) {
   };
 }
 
+function overnightDetailHtml(item, { executionPlan, portfolio, catalyst }) {
+  const validation = item.validation || {};
+  const catalystDetails = (catalyst.events || []).map((event) =>
+    `${event.days === 0 ? "今天" : `${event.days}天后`} · ${event.title} · ${event.source || "公开披露"}`
+  );
+  const limitUpText = item.limitUp?.found
+    ? `${item.limitUp.date || "日期待补充"}${item.limitUp.sessionsAgo ? ` · ${item.limitUp.sessionsAgo}个交易日前` : ""}`
+    : "近20日未核对到涨停";
+  return `
+    <div class="execution-detail-grid overnight-execution-detail">
+      <article><h3>隔夜价格计划</h3><div class="execution-levels"><span>分时均价<strong>${number(executionPlan.averagePrice)}</strong></span><span>观察区<strong>${executionPlan.range ? `${number(executionPlan.range.low)}–${number(executionPlan.range.high)}` : "不追价"}</strong></span><span>5%上限<strong>${number(executionPlan.chaseCap)}</strong></span><span>放弃位<strong>${number(executionPlan.invalidation)}</strong></span></div><p>${escapeHTML(executionPlan.reason || "等待尾盘结构确认")}</p><small>${escapeHTML(executionPlan.exitRule || "次一交易日开盘后半小时内完成退出")}；AI不参与价格计算。</small></article>
+      <article><h3>筛选规则明细</h3><div class="execution-factor-grid"><span>涨幅<strong>${percent(item.changePercent)}</strong></span><span>量比<strong>${number(item.volumeRatio, 2)}</strong></span><span>换手率<strong>${plainPercent(item.turnoverRate)}</strong></span><span>流通市值<strong>${compactMoney(item.floatMarketCap)}</strong></span><span>均价线上<strong>${plainPercent(item.intraday?.aboveRatio, true)}</strong></span><span>近20日涨停<strong>${escapeHTML(limitUpText)}</strong></span></div><small>上述条件需同时成立；任一失效就放弃，不为凑数降低标准。</small></article>
+      <article><h3>隔夜历史代理</h3><div class="execution-validation-grid"><span>历史样本<strong>${validation.sampleCount == null ? "待积累" : `${number(validation.sampleCount, 0)} 次`}</strong></span><span>胜率<strong>${validation.hitRate == null ? "样本不足" : plainPercent(validation.hitRate, true)}</strong></span><span>平均收益<strong>${validation.averageReturn == null ? "--" : percent(validation.averageReturn, true)}</strong><small>${validation.worstReturn == null ? "" : `最差 ${percent(validation.worstReturn, true)}`}</small></span></div><small>历史代理无法完整复刻14:30–14:50分时条件，应结合下方真实前向记录判断。</small></article>
+      <article><h3>组合与事件约束</h3><div class="detail-constraint-heading"><span class="${executionConstraintClass(portfolio.status)}">${escapeHTML(portfolio.label)}</span><span class="${executionConstraintClass(catalyst.status)}">${escapeHTML(catalyst.label)}</span></div>${executionDetailList([...(portfolio.reasons || []), portfolio.suggestedShares ? `当前参数下参考新增余量 ${portfolio.suggestedShares} 股` : "", ...catalystDetails].filter(Boolean), "当前没有新增约束")}</article>
+    </div>
+  `;
+}
+
 function renderOvernight() {
   const loading = $("#overnight-loading");
   const content = $("#overnight-content");
@@ -2981,7 +3151,8 @@ function renderOvernight() {
     ["换手", funnel.turnover, "5%–10%"],
     ["流通市值", funnel.marketCap, "≤ 300亿"],
     ["近20日涨停", funnel.recentLimitUp, "历史核对"],
-    ["分时均价", funnel.intradayAndLimitUp, "至少95%在线上"]
+    ["分时均价", funnel.intradayAndLimitUp, "至少95%在线上"],
+    ["执行区间", funnel.executionPlan, "有价格空间且不追高"]
   ];
   $("#overnight-funnel").innerHTML = funnelStages.map(([label, value, detail]) => `
     <div><span>${escapeHTML(label)}</span><strong>${number(value || 0, 0)}</strong><small>${escapeHTML(detail)}</small></div>
@@ -2998,18 +3169,22 @@ function renderOvernight() {
   tableScroll.classList.toggle("hidden", picks.length === 0);
   $("#overnight-table-body").innerHTML = picks
     .map((item) => {
-      const validation = item.validation || {};
+      const context = overnightExecutionContext(item);
+      const { executionPlan, portfolio, catalyst } = context;
+      const rangeText = executionPlan.range
+        ? `${number(executionPlan.range.low)}–${number(executionPlan.range.high)}`
+        : "不提供追价区间";
+      const expanded = state.expandedOvernightCode === item.code;
       return `
-        <tr>
+        <tr class="overnight-row">
           <td><div class="stock-cell"><strong>${escapeHTML(item.name)}</strong><span>${escapeHTML(item.code)} · ${escapeHTML(item.industry || "未分类")}</span></div></td>
-          <td><div class="hotspot-score ${item.score >= 80 ? "high" : ""}"><strong>${number(item.score, 0)}</strong><span class="hotspot-score-track"><span style="width:${Math.max(0, Math.min(100, item.score))}%"></span></span></div></td>
-          <td><strong class="up">${percent(item.changePercent)}</strong><small>量比 ${number(item.volumeRatio, 2)}</small></td>
-          <td><strong>${plainPercent(item.turnoverRate)}</strong><small>${compactMoney(item.floatMarketCap)}</small></td>
-          <td><strong>${escapeHTML(item.limitUp?.date || "--")}</strong><small>${item.limitUp?.sessionsAgo ? `${item.limitUp.sessionsAgo} 个交易日前` : "近20日无记录"}</small></td>
-          <td><strong>${plainPercent(item.intraday?.aboveRatio, true)}</strong><small>当前均价 ${number(item.intraday?.currentAveragePrice)}</small></td>
-          <td><div class="validation-cell"><strong>${validation.hitRate == null ? "样本不足" : `胜率 ${plainPercent(validation.hitRate, true)}`}</strong><small>${validation.averageReturn == null ? "等待更多历史结构" : `均值 ${percent(validation.averageReturn, true)} · ${validation.sampleCount}次`}</small></div></td>
-          <td><button class="secondary-button analyze-overnight" data-code="${escapeHTML(item.code)}">分析</button></td>
+          <td><div class="execution-plan-cell compact"><div><strong class="up">${number(item.price)}</strong><small>${percent(item.changePercent)}</small><span class="execution-status ${escapeHTML(executionPlan.tone || "neutral")}">${escapeHTML(executionPlan.label)}</span></div><span>观察 ${rangeText}</span><small>次日开盘后半小时内退出</small></div></td>
+          <td><div class="overnight-score-plan"><div class="hotspot-score ${item.score >= 80 ? "high" : ""}"><strong>${number(item.score, 0)}</strong><span class="hotspot-score-track"><span style="width:${Math.max(0, Math.min(100, item.score))}%"></span></span></div><small>${item.confirmations ? `已连续确认 ${item.confirmations} 次` : "量价规则通过"}</small></div></td>
+          <td><div class="overnight-key-stats"><span>量比 <strong>${number(item.volumeRatio, 2)}</strong></span><span>换手 <strong>${plainPercent(item.turnoverRate)}</strong></span><span>均价线上 <strong>${plainPercent(item.intraday?.aboveRatio, true)}</strong></span><span>涨停 <strong>${item.limitUp?.sessionsAgo ? `${item.limitUp.sessionsAgo}日前` : "已核对"}</strong></span></div></td>
+          <td><div class="execution-constraint-summary"><span class="${executionConstraintClass(portfolio.status)}">${escapeHTML(portfolio.label)}</span><span class="${executionConstraintClass(catalyst.status)}">${escapeHTML(catalyst.label)}</span><small>${escapeHTML(catalyst.status === "risk" ? catalyst.detail : portfolio.reasons[0] || `参考余量 ${portfolio.suggestedShares || 0} 股`)}</small></div></td>
+          <td><div class="table-actions"><button class="secondary-button analyze-overnight" data-code="${escapeHTML(item.code)}">分析</button><button class="table-action toggle-overnight-detail ${expanded ? "active" : ""}" data-code="${escapeHTML(item.code)}" title="${expanded ? "收起详情" : "展开详情"}" aria-expanded="${expanded}"><i data-lucide="chevron-down"></i></button></div></td>
         </tr>
+        ${expanded ? `<tr class="execution-detail-row"><td colspan="6">${overnightDetailHtml(item, context)}</td></tr>` : ""}
       `;
     })
     .join("");
@@ -3020,12 +3195,16 @@ function renderOvernight() {
       loadMarketData(button.dataset.code);
     })
   );
+  $$(".toggle-overnight-detail").forEach((button) => button.addEventListener("click", () => {
+    state.expandedOvernightCode = state.expandedOvernightCode === button.dataset.code ? null : button.dataset.code;
+    renderOvernight();
+  }));
   const asOf = new Date(snapshot.asOf);
   const timestamp = Number.isNaN(asOf.getTime())
     ? "--"
     : asOf.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
   $("#overnight-note").textContent =
-    `数据时间 ${timestamp} · 实时：${sourceStatus.candidateSource || "公开行情"} · 分时：${sourceStatus.intradaySource || "公开分时均价"}。历史统计采用当日收盘至次日开盘的日线代理，未复刻历史量比、换手和分时条件，不构成投资建议。`;
+    `数据时间 ${timestamp} · 实时：${sourceStatus.candidateSource || "公开行情"} · 分时：${sourceStatus.intradaySource || "公开分时均价"}。参考区间由分时均价、现价与5%不追高上限确定，AI不参与定价；历史代理未复刻完整分时条件，不构成投资建议。`;
   refreshIcons();
   scheduleOvernightRefresh();
 }
@@ -3052,6 +3231,11 @@ async function loadOvernight({ force = false } = {}) {
   }
   if (state.overnight && !force) {
     renderOvernight();
+    if (!state.overnightCatalysts && !state.overnightCatalystsLoading) {
+      loadExecutionCatalysts("overnight", state.overnight.picks?.map((item) => item.code));
+    }
+    if (!state.breadth && !state.breadthLoading) loadBreadth();
+    if (state.holdings.length && !state.portfolioRisk && !state.portfolioRiskLoading) updateHoldingQuotes();
     return;
   }
   state.overnightLoading = true;
@@ -3065,17 +3249,9 @@ async function loadOvernight({ force = false } = {}) {
     }));
     state.overnight = snapshot;
     persistOvernightForwardSnapshot(snapshot);
-    if ((snapshot.picks || []).length) {
-      state.signalJournal = captureSignals(state.signalJournal, snapshot.picks.map((item) => ({
-        code: item.code,
-        name: item.name,
-        industry: item.industry,
-        price: item.price,
-        score: item.score,
-        riskLine: item.riskLine
-      })), { source: "尾盘观察", asOf: snapshot.asOf });
-      persistTradingState();
-    }
+    loadExecutionCatalysts("overnight", (snapshot.picks || []).map((item) => item.code), { force });
+    if (!state.breadth && !state.breadthLoading) loadBreadth();
+    if (state.holdings.length && !state.portfolioRisk && !state.portfolioRiskLoading) updateHoldingQuotes();
     const newPicks = (snapshot.picks || []).filter((item) => !previousCodes.has(item.code));
     if (!isBrowserPreview && newPicks.length && !$("#overnight-view").classList.contains("active")) {
       window.hengce.notify(
@@ -4162,6 +4338,8 @@ async function updatePortfolioRisk() {
   state.portfolioRiskLoading = false;
   renderPortfolioRisk();
   renderTradingWorkspace();
+  if (state.recommendations) renderRecommendations();
+  if (state.overnight) renderOvernight();
 }
 
 function renderHoldings() {
@@ -4335,6 +4513,25 @@ function addCurrentStockToWatchlist() {
     showToast("当前股票已在观察提醒中");
     return;
   }
+  const dashboardPlan = buildObservationPlan({
+    quote: state.quote,
+    model: state.analysis,
+    valuation: state.valuation,
+    settings: state.settings
+  });
+  const executionPlan = buildSwingExecutionPlan({
+    price: state.quote.price,
+    score: state.analysis.score,
+    support: state.analysis.support,
+    sma20: state.analysis.sma20,
+    pressure: state.analysis.pressure,
+    riskLine: state.analysis.riskLine,
+    atr14: state.analysis.atr14,
+    volumeRatio: state.analysis.volumeRatio
+  }, state.settings);
+  if (dashboardPlan.pullbackRange) executionPlan.range = dashboardPlan.pullbackRange;
+  if (dashboardPlan.breakout) executionPlan.breakout = dashboardPlan.breakout;
+  if (dashboardPlan.invalidation) executionPlan.invalidation = dashboardPlan.invalidation;
   state.watchlist.push({
     code: state.quote.code,
     name: state.quote.name,
@@ -4343,6 +4540,8 @@ function addCurrentStockToWatchlist() {
     baselineScore: state.analysis.score,
     pressure: state.analysis.pressure,
     riskLine: state.analysis.riskLine,
+    executionPlan,
+    planSource: "量化看板",
     lastAlert: ""
   });
   writeJSON("hengce.watchlist.v1", state.watchlist);
@@ -4665,20 +4864,36 @@ function renderTradeJournal() {
 }
 
 function signalOutcomeCell(item, horizon) {
+  if (item.source === "尾盘观察" || item.executionPlan?.horizon === "overnight") {
+    return '<span class="muted">专用核对</span>';
+  }
   const outcome = item.outcomes?.[horizon];
   if (!Number.isFinite(outcome?.netReturn)) return '<span class="muted">跟踪中</span>';
   return `<span class="signal-outcome ${directionClass(outcome.netReturn)}">${percent(outcome.netReturn, true)}<small>超额 ${outcome.excessReturn == null ? "--" : percent(outcome.excessReturn, true)}</small></span>`;
 }
 
+function planOutcomeCell(item) {
+  const outcome = item.planOutcome;
+  if (item.source === "尾盘观察" || item.executionPlan?.horizon === "overnight") return '<span class="plan-validation external">尾盘固定验证<small>见尾盘观察 · 次日10:00</small></span>';
+  if (!item.executionPlan) return '<span class="muted">旧信号无区间</span>';
+  if (!outcome || outcome.status === "tracking") return '<span class="plan-validation tracking">等待触达</span>';
+  if (outcome.status === "missed") return '<span class="plan-validation missed">10日未触达</span>';
+  if (outcome.status === "invalidated") return `<span class="plan-validation invalid">触达前失效<small>${escapeHTML(outcome.invalidatedAt || "")}</small></span>`;
+  if (outcome.status === "ambiguous") return `<span class="plan-validation ambiguous">触达顺序不明<small>${escapeHTML(outcome.invalidatedAt || "")} · 不纳入统计</small></span>`;
+  const fiveDay = outcome.outcomes?.[5];
+  return `<span class="plan-validation touched">${outcome.entryMode === "signal-price" ? "信号价记录" : `${outcome.daysToTouch}日触达`}<small>${escapeHTML(outcome.touchDate || "")} · ${number(outcome.entryPrice)}${fiveDay ? ` · 5日 ${percent(fiveDay.netReturn, true)}` : ""}</small></span>`;
+}
+
 function renderSignalJournal() {
   const summary = summarizeSignals(state.signalJournal, 5);
+  const plan = summary.planValidation || {};
   $("#signal-review-summary").innerHTML = [
     ["已冻结信号", `${summary.total} 条`, "保留发生时价格与评分"],
-    ["5日已完成", `${summary.settled} 条`, `${summary.tracking} 条仍跟踪`],
+    ["区间触达", plan.touchRate == null ? "--" : plainPercent(plan.touchRate, true), `${plan.touched || 0}/${plan.total || 0} 条已触达`],
+    ["区间后5日", plan.averageReturn == null ? "--" : percent(plan.averageReturn, true), `${plan.settled || 0} 条完成`, directionClass(plan.averageReturn)],
     ["5日胜率", summary.hitRate == null ? "--" : plainPercent(summary.hitRate, true), "净收益为正"],
     ["5日平均净收益", summary.averageReturn == null ? "--" : percent(summary.averageReturn, true), "已计交易成本", directionClass(summary.averageReturn)],
-    ["5日平均超额", summary.averageExcessReturn == null ? "--" : percent(summary.averageExcessReturn, true), "相对沪深对应指数", directionClass(summary.averageExcessReturn)],
-    ["主要来源", summary.bySource[0]?.source || "--", summary.bySource[0] ? `${summary.bySource[0].count} 条完成` : "等待样本"]
+    ["触达后最差波动", plan.worstAdverse == null ? "--" : percent(plan.worstAdverse, true), "区间计划5日最大逆向", directionClass(plan.worstAdverse)]
   ].map(([label, value, detail, className = ""]) => `<div><span>${escapeHTML(label)}</span><strong class="${className}">${escapeHTML(value)}</strong><small>${escapeHTML(detail)}</small></div>`).join("");
   $("#signal-journal-body").innerHTML = state.signalJournal.length
     ? state.signalJournal.slice(0, 80).map((item) => `
@@ -4686,14 +4901,15 @@ function renderSignalJournal() {
           <td>${escapeHTML(String(item.signalAt || "").slice(0, 10))}</td>
           <td><div class="stock-cell"><strong>${escapeHTML(item.source || "量化分析")} · ${escapeHTML(item.name || item.code)}</strong><span>${escapeHTML(item.code)} · 信号价 ${number(item.price)}</span></div></td>
           <td>${Number.isFinite(Number(item.score)) ? number(item.score, 0) : "--"}</td>
+          <td>${planOutcomeCell(item)}</td>
           <td>${signalOutcomeCell(item, 1)}</td>
           <td>${signalOutcomeCell(item, 3)}</td>
           <td>${signalOutcomeCell(item, 5)}</td>
           <td>${signalOutcomeCell(item, 10)}</td>
-          <td><span class="risk-pill risk-${item.status === "complete" ? "low" : "medium"}">${item.status === "complete" ? "已完成" : "跟踪中"}</span></td>
+          <td><span class="risk-pill risk-${item.status === "complete" ? "low" : "medium"}">${item.source === "尾盘观察" || item.executionPlan?.horizon === "overnight" ? "尾盘账本" : item.status === "complete" ? "已完成" : "跟踪中"}</span></td>
         </tr>
       `).join("")
-    : '<tr><td colspan="8" class="muted">刷新 A股优选或保存交易计划后，将自动冻结真实信号</td></tr>';
+    : '<tr><td colspan="9" class="muted">刷新 A股优选或保存交易计划后，将自动冻结真实信号</td></tr>';
   $("#refresh-signal-journal").disabled = state.signalJournalSettling;
   $("#refresh-signal-journal").setAttribute("aria-busy", String(state.signalJournalSettling));
   $("#refresh-signal-journal").textContent = state.signalJournalSettling ? "更新中…" : "更新结果";
@@ -4710,7 +4926,8 @@ function captureRecommendationSignals(snapshot) {
       industry: item.industry,
       price: item.price,
       score: item.score,
-      riskLine: item.riskLine
+      riskLine: item.riskLine,
+      executionPlan: item.executionPlan || buildSwingExecutionPlan(item)
     })),
     { source: "A股优选", asOf: snapshot.asOf }
   );
@@ -4725,7 +4942,16 @@ function captureCurrentPlanSignal(plan) {
     industry: plan.industry,
     price: state.quote.price,
     score: state.analysis?.score,
-    riskLine: plan.stop
+    riskLine: plan.stop,
+    executionPlan: {
+      version: "saved-plan-v1",
+      horizon: "swing",
+      generatedBy: "quant",
+      entryMode: "range-touch",
+      range: { low: plan.entryLow, high: plan.entryHigh },
+      invalidation: plan.stop,
+      target: plan.target
+    }
   }], { source: "交易计划", asOf: new Date().toISOString() });
   persistTradingState();
 }
@@ -4734,7 +4960,9 @@ async function settleSignalJournal({ force = false } = {}) {
   if (state.signalJournalSettling || !state.signalJournal.length) return;
   state.signalJournalSettling = true;
   renderSignalJournal();
-  const pending = state.signalJournal.filter((item) => item.status !== "complete").slice(0, 16);
+  const pending = state.signalJournal.filter((item) =>
+    item.status !== "complete" && item.source !== "尾盘观察" && item.executionPlan?.horizon !== "overnight"
+  ).slice(0, 16);
   const histories = new Map();
   const historyFor = (code) => {
     if (!histories.has(code)) histories.set(code, window.hengce.klines(code, 260, { force }));
@@ -5260,13 +5488,38 @@ function populateAiSettings() {
     : "输入 API Key（不会写入页面存储）";
   $("#ai-send-holdings").checked = config.sendHoldings === true;
   $("#delete-ai-key").disabled = !config.hasApiKey;
-  $("#ai-settings-badge").textContent = config.hasApiKey ? "已配置" : "未配置";
+  $("#ai-settings-badge").textContent = config.hasApiKey ? "本机已配置" : "未配置";
   $("#ai-settings-badge").classList.toggle("positive", config.hasApiKey);
   $("#ai-settings-status").textContent = config.hasApiKey
     ? config.secureStorage
       ? `Key 已由系统加密保存 · ${config.model}`
       : "系统加密暂不可用，Key 仅在本次运行期间保留"
     : "保存配置后可生成 AI 解释；本地量化摘要始终可用";
+  renderAiEndpointDisclosure();
+}
+
+function renderAiEndpointDisclosure() {
+  const rawUrl = $("#ai-base-url")?.value || state.aiConfig?.baseUrl || "";
+  let host = "地址尚未设置";
+  try {
+    host = new URL(rawUrl).host || host;
+  } catch {
+    host = "地址格式待确认";
+  }
+  const dirty = aiConfigurationFormIsDirty();
+  $("#ai-endpoint-host").textContent = `${dirty ? "保存后" : "实际"} AI 请求目标：${host}`;
+  const sendsHoldings = $("#ai-send-holdings").checked;
+  $("#ai-holdings-warning").classList.toggle("hidden", !sendsHoldings);
+  $("#ai-endpoint-disclosure").classList.toggle("sensitive", sendsHoldings);
+}
+
+function aiConfigurationFormIsDirty() {
+  if (!state.aiConfig) return true;
+  const cleanUrl = (value) => String(value || "").trim().replace(/\/+$/, "");
+  return cleanUrl($("#ai-base-url")?.value) !== cleanUrl(state.aiConfig.baseUrl) ||
+    String($("#ai-model")?.value || "").trim() !== String(state.aiConfig.model || "").trim() ||
+    Boolean($("#ai-api-key")?.value.trim()) ||
+    $("#ai-send-holdings")?.checked !== (state.aiConfig.sendHoldings === true);
 }
 
 function renderAiConfig() {
@@ -5830,13 +6083,24 @@ async function saveAiConfiguration() {
 }
 
 async function testAiConfiguration() {
+  if (aiConfigurationFormIsDirty()) {
+    $("#ai-settings-status").textContent = "当前表单尚未保存，请先保存 AI 配置再测试实际请求目标";
+    return;
+  }
   $("#ai-settings-status").textContent = "正在测试连接…";
   $("#test-ai-connection").disabled = true;
+  const checkedAt = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+  let endpoint = "当前接口";
+  try {
+    endpoint = new URL($("#ai-base-url").value).host || endpoint;
+  } catch {
+    // The save/test path will return the actionable URL validation message.
+  }
   try {
     const result = await window.hengce.testAi();
-    $("#ai-settings-status").textContent = `连接成功 · ${result.model} · ${result.endpoint}`;
+    $("#ai-settings-status").textContent = `连接成功 · ${checkedAt} · ${result.model} · 实际目标 ${result.endpoint}`;
   } catch (error) {
-    $("#ai-settings-status").textContent = `连接失败：${aiErrorMessage(error)}`;
+    $("#ai-settings-status").textContent = `连接失败 · ${checkedAt} · 目标 ${endpoint}：${aiErrorMessage(error)}`;
   } finally {
     $("#test-ai-connection").disabled = false;
   }
@@ -6290,6 +6554,10 @@ function bindEvents() {
   $("#save-ai-settings").addEventListener("click", saveAiConfiguration);
   $("#test-ai-connection").addEventListener("click", testAiConfiguration);
   $("#delete-ai-key").addEventListener("click", removeAiKey);
+  $("#ai-base-url").addEventListener("input", renderAiEndpointDisclosure);
+  $("#ai-model").addEventListener("input", renderAiEndpointDisclosure);
+  $("#ai-api-key").addEventListener("input", renderAiEndpointDisclosure);
+  $("#ai-send-holdings").addEventListener("change", renderAiEndpointDisclosure);
   window.hengce.onWindowPreferences((preferences) => {
     state.windowPreferences = {
       ...state.windowPreferences,

@@ -18,7 +18,8 @@ const {
   parseJsonResponse,
   publicAiSettings,
   responsesUrl,
-  safeApiError
+  safeApiError,
+  shouldRetryAiStatus
 } = require("../electron/ai_service.js");
 
 test("AI settings require HTTPS and expose only masked key state", () => {
@@ -38,7 +39,9 @@ test("AI response parser handles raw Responses API content", () => {
   assert.deepEqual(parseJsonResponse({ output_text: JSON.stringify(report) }), report);
   assert.deepEqual(parseJsonResponse({ output: [{ content: [{ text: JSON.stringify(report) }] }] }), report);
   assert.throws(() => parseJsonResponse({ output: [] }), /可解析/);
-  assert.match(safeApiError(401, {}), /无效/);
+  assert.match(safeApiError(401, {}), /暂未识别/);
+  assert.equal(shouldRetryAiStatus(401, 0), true);
+  assert.equal(shouldRetryAiStatus(401, 1), false);
   assert.match(safeApiError(403, {}), /没有该模型/);
   assert.match(safeApiError(404, { error: { code: "model_not_found" } }), /模型名称/);
   assert.match(safeApiError(429, {}), /额度不足/);

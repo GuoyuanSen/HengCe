@@ -76,6 +76,27 @@ test("signal journal freezes timestamp and settles forward outcomes without hind
   const tooOld = settleSignal({ ...signals[0], signalAt: "2025-01-01" }, bars, benchmark, {});
   assert.equal(tooOld.entry, null);
   assert.deepEqual(tooOld.outcomes, {});
+
+  const withPlan = captureSignals(signals, [{
+    code: "600519",
+    name: "贵州茅台",
+    price: 100,
+    score: 75,
+    executionPlan: { version: "swing-v1", entryMode: "range-touch", range: { low: 99, high: 101 }, invalidation: 95 }
+  }], { source: "A股优选", asOf: "2026-09-01T15:00:00+08:00" });
+  assert.equal(withPlan.length, 1);
+  assert.equal(withPlan[0].executionPlan.version, "swing-v1");
+
+  const mixed = summarizeSignals([settled, {
+    ...signals[0],
+    id: "tail-signal",
+    source: "尾盘观察",
+    outcomes: { 5: { netReturn: -0.5, excessReturn: -0.5 } },
+    executionPlan: { horizon: "overnight", entryMode: "signal-price" }
+  }], 5);
+  assert.equal(mixed.total, 2);
+  assert.equal(mixed.settled, 1);
+  assert.equal(mixed.hitRate, 1);
 });
 
 test("catalysts merge and action center prioritize immediate risk", () => {

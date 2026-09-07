@@ -1,3 +1,5 @@
+const { buildSwingExecutionPlan } = require("../src/execution_plan.js");
+
 function finiteNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
@@ -219,7 +221,7 @@ function recommendationFor(candidate, model, validation = null) {
   if (candidate.peDynamic > 0 && candidate.peDynamic <= 35) {
     reasons.push(`动态PE ${candidate.peDynamic.toFixed(1)} 倍`);
   }
-  return {
+  const recommendation = {
     ...candidate,
     score,
     technicalScore: model.score,
@@ -231,10 +233,15 @@ function recommendationFor(candidate, model, validation = null) {
     momentum20: model.momentum20,
     volatility: model.volatility,
     support: model.support,
+    sma20: model.sma20,
+    atr14: model.atr14,
+    volumeRatio: model.volumeRatio,
     pressure: model.pressure,
     riskLine: model.riskLine,
     reasons: reasons.slice(0, 3)
   };
+  recommendation.executionPlan = buildSwingExecutionPlan(recommendation);
+  return recommendation;
 }
 
 function diversifyRecommendations(items, limit = 12, perIndustry = 2) {

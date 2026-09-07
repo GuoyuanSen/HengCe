@@ -24,7 +24,10 @@
       floatMarketCap: Number(item.floatMarketCap),
       aboveAverageRatio: Number(item.intraday?.aboveRatio),
       recentLimitUpDate: item.limitUp?.date || null,
-      confirmations: Number(item.confirmations || 0)
+      confirmations: Number(item.confirmations || 0),
+      executionPlan: item.executionPlan && typeof item.executionPlan === "object"
+        ? item.executionPlan
+        : null
     };
   }
 

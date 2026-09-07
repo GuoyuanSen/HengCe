@@ -76,6 +76,8 @@ test("recommendation scoring rewards technical structure without exceeding 100",
   assert.ok(result.score >= 70 && result.score <= 100);
   assert.equal(result.risk, "较低");
   assert.ok(result.reasons.some((item) => item.includes("动态PE")));
+  assert.equal(result.executionPlan.generatedBy, "quant");
+  assert.ok(result.executionPlan.breakout > result.pressure);
 });
 
 test("snapshot sorts recommendations and limits the observation pool", () => {
@@ -111,6 +113,7 @@ test("snapshot sorts recommendations and limits the observation pool", () => {
   assert.equal(snapshot.summary.candidatePool, 88);
   assert.equal(snapshot.recommendations.length, 12);
   assert.ok(snapshot.recommendations[0].score >= snapshot.recommendations[1].score);
+  assert.equal(snapshot.recommendations.every((item) => item.executionPlan?.version === "swing-v1"), true);
 });
 
 test("historical validation uses next-day open and reports forward outcomes", () => {

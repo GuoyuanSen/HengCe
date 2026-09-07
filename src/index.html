@@ -554,6 +554,10 @@
                 <strong id="recommendation-filter-count">0 只</strong>
               </div>
             </section>
+            <div class="execution-plan-principle">
+              <i data-lucide="shield-check"></i>
+              <span><strong>先看区间，再看排名</strong><small>价格计划由支撑、MA20、ATR、压力与失效位确定；AI只解释依据，不参与定价。</small></span>
+            </div>
             <section class="table-section recommendation-table-section">
               <div class="section-heading">
                 <div>
@@ -565,13 +569,11 @@
                 <table class="recommendation-table">
                   <thead>
                     <tr>
-                      <th>排名</th>
+                      <th>排名 / 变化</th>
                       <th>股票</th>
-                      <th>综合评分</th>
-                      <th>因子拆解</th>
-                      <th>历史验证</th>
-                      <th>风险</th>
-                      <th>入选依据</th>
+                      <th>现价 / 波段计划</th>
+                      <th>评分 / 因子</th>
+                      <th>执行约束</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -632,7 +634,12 @@
               <span>流通市值 ≤ 300亿</span>
               <span>换手率 5%–10%</span>
               <span>至少95%分时在均价线上</span>
+              <span>接近5%上限不追价</span>
             </section>
+            <div class="execution-plan-principle compact">
+              <i data-lucide="timer-reset"></i>
+              <span><strong>尾盘区间只服务一个隔夜周期</strong><small>现价和分时均价形成参考区间，跌破均价、回落至3%以下或逼近5%时放弃。</small></span>
+            </div>
             <section class="overnight-diagnostics">
               <div class="section-heading">
                 <div>
@@ -655,12 +662,10 @@
                   <thead>
                     <tr>
                       <th>股票</th>
-                      <th>尾盘评分</th>
-                      <th>涨幅 / 量比</th>
-                      <th>换手 / 流通市值</th>
-                      <th>最近涨停</th>
-                      <th>均价线上方</th>
-                      <th>隔夜历史代理</th>
+                      <th>现价 / 隔夜计划</th>
+                      <th>评分</th>
+                      <th>关键确认</th>
+                      <th>执行约束</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -704,7 +709,7 @@
           <div class="page-heading">
             <div>
               <h1>观察提醒</h1>
-              <p>跟踪压力突破、风险线失守和模型评分变化</p>
+              <p>跟踪观察区距离、放量突破、风险失效和模型评分变化</p>
             </div>
             <button id="refresh-watchlist" class="icon-button" title="刷新观察列表">
               <i data-lucide="refresh-cw"></i>
@@ -724,8 +729,8 @@
                     <tr>
                       <th>股票</th>
                       <th>最新价</th>
+                      <th>观察区 / 距离</th>
                       <th>模型评分</th>
-                      <th>压力 / 风险线</th>
                       <th>当前状态</th>
                       <th>加入时间</th>
                       <th></th>
@@ -815,13 +820,13 @@
 
           <section class="table-section signal-journal-section">
             <div class="section-heading">
-              <div><h2>信号前向验证</h2><span>冻结信号发生时的信息，下一交易日开盘作为验证起点</span></div>
+              <div><h2>信号前向验证</h2><span>冻结信号发生时的信息；普通结果以下一交易日开盘为基准，价格计划从首次触及观察区起算</span></div>
               <button id="refresh-signal-journal" class="secondary-button" type="button">更新结果</button>
             </div>
             <div id="signal-review-summary" class="signal-review-summary"></div>
             <div class="table-scroll">
               <table class="signal-journal-table">
-                <thead><tr><th>信号日期</th><th>来源 / 股票</th><th>评分</th><th>1日</th><th>3日</th><th>5日</th><th>10日</th><th>状态</th></tr></thead>
+                <thead><tr><th>信号日期</th><th>来源 / 股票</th><th>评分</th><th>区间验证</th><th>1日</th><th>3日</th><th>5日</th><th>10日</th><th>状态</th></tr></thead>
                 <tbody id="signal-journal-body"></tbody>
               </table>
             </div>
@@ -1241,6 +1246,11 @@
                 <span>允许把持仓标的、股数和成本发送给 AI（默认关闭）</span>
               </label>
             </div>
+            <div id="ai-endpoint-disclosure" class="ai-endpoint-disclosure">
+              <i data-lucide="shield-check"></i>
+              <div><strong>本机保存配置</strong><span id="ai-endpoint-host">尚未读取请求目标</span><small>Key 仅用于向这里发起你主动触发的 AI 请求，不会发送到 GitHub 或衡策服务器。</small></div>
+              <em id="ai-holdings-warning" class="hidden">将包含持仓股数与成本</em>
+            </div>
             <div class="ai-settings-actions">
               <button id="save-ai-settings" class="primary-button" type="button">保存 AI 配置</button>
               <button id="test-ai-connection" class="secondary-button" type="button">测试连接</button>
@@ -1414,6 +1424,7 @@
     <script src="overnight_journal.js"></script>
     <script src="trade_plan.js"></script>
     <script src="trade_journal.js"></script>
+    <script src="execution_plan.js"></script>
     <script src="trading_workspace.js"></script>
     <script src="local_backup.js"></script>
     <script src="ai_tracking.js"></script>

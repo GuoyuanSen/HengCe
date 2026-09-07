@@ -209,6 +209,23 @@ test("A-share recommendations are a standalone lazy-loaded view", () => {
   assert.match(renderer, /不构成投资建议/);
 });
 
+test("recommendations and tail scan expose deterministic execution plans with progressive detail", () => {
+  assert.match(html, /src="execution_plan\.js"/);
+  assert.match(html, /现价 \/ 波段计划/);
+  assert.match(html, /现价 \/ 隔夜计划/);
+  assert.match(renderer, /buildSwingExecutionPlan/);
+  assert.match(renderer, /buildOvernightExecutionPlan/);
+  assert.match(renderer, /compareRecommendationRanks/);
+  assert.match(renderer, /class="execution-detail-row"/);
+  assert.match(renderer, /toggle-recommendation-detail/);
+  assert.match(renderer, /toggle-overnight-detail/);
+  assert.match(renderer, /量化价格计划/);
+  assert.match(renderer, /隔夜价格计划/);
+  assert.match(renderer, /AI不参与价格计算/);
+  assert.match(styles, /\.execution-detail-grid/);
+  assert.match(styles, /\.execution-constraint-summary/);
+});
+
 test("overnight tail scan is a standalone timed view", () => {
   assert.match(preload, /overnight:\s*\(options/);
   assert.match(main, /ipcMain\.handle\("market:overnight"/);
@@ -263,6 +280,10 @@ test("AI tracking uses encrypted main-process settings and keeps a local fallbac
   assert.match(renderer, /buildLocalTrackingReport/);
   assert.match(renderer, /hengce\.aiTracking\.v1/);
   assert.match(renderer, /AI 解释未完成[\s\S]*已保留本地量化摘要/);
+  assert.match(html, /id="ai-endpoint-disclosure"/);
+  assert.match(html, /id="ai-holdings-warning"/);
+  assert.match(renderer, /aiConfigurationFormIsDirty/);
+  assert.match(renderer, /连接成功.*实际目标/);
   assert.doesNotMatch(renderer, /localStorage\.setItem\([^\n]*apiKey/i);
 });
 
@@ -430,6 +451,9 @@ test("trading workspace closes the plan, execution and review loop", () => {
   assert.match(main, /ipcMain\.handle\("market:index-klines"/);
   assert.match(main, /fetchBenchmarkKLines\("shanghai", 260\)/);
   assert.match(renderer, /window\.hengce\.indexKlines/);
+  assert.match(renderer, /planOutcomeCell/);
+  assert.match(renderer, /planValidation/);
+  assert.match(html, /区间验证/);
 });
 
 test("local backup is allowlisted, optionally encrypted and excludes AI keys", () => {

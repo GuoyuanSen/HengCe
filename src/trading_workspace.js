@@ -1,9 +1,13 @@
 (function exposeTradingWorkspace(root, factory) {
-  const api = factory();
+  const executionPlan = typeof module === "object" && module.exports
+    ? require("./execution_plan.js")
+    : root.HengCeExecutionPlan;
+  const api = factory(executionPlan);
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.HengCeTradingWorkspace = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function createTradingWorkspace() {
+})(typeof globalThis !== "undefined" ? globalThis : this, function createTradingWorkspace(executionPlan = {}) {
   const SIGNAL_HORIZONS = [1, 3, 5, 10];
+  const { settleExecutionPlan, summarizePlanOutcomes } = executionPlan;
 
   function finite(value) {
     if (value == null || value === "") return null;
@@ -256,6 +260,8 @@
           ? "shanghai"
           : "shenzhen",
       outcomes: value.outcomes && typeof value.outcomes === "object" ? value.outcomes : {},
+      executionPlan: value.executionPlan && typeof value.executionPlan === "object" ? value.executionPlan : null,
+      planOutcome: value.planOutcome && typeof value.planOutcome === "object" ? value.planOutcome : null,
       entry: value.entry && typeof value.entry === "object" ? value.entry : null,
       status: value.status === "complete" ? "complete" : "tracking",
       capturedAt: validDate(value.capturedAt) || new Date().toISOString()
@@ -271,6 +277,11 @@
       if (!seen.has(item.id)) {
         seen.add(item.id);
         next.unshift(item);
+        return;
+      }
+      const index = next.findIndex((existing) => existing.id === item.id);
+      if (index >= 0 && !next[index].executionPlan && item.executionPlan) {
+        next[index] = { ...next[index], executionPlan: item.executionPlan };
       }
     });
     return next.sort((left, right) => Date.parse(right.signalAt) - Date.parse(left.signalAt)).slice(0, limit);
@@ -282,10 +293,13 @@
     const bars = stockBars.filter((item) => item?.date && finite(item.open) > 0 && finite(item.close) > 0)
       .sort((left, right) => String(left.date).localeCompare(String(right.date)));
     const signalDate = dateKey(signal.signalAt);
+    const planOutcome = typeof settleExecutionPlan === "function"
+      ? settleExecutionPlan(signal, bars, costs)
+      : signal.planOutcome;
     const entryIndex = bars.findIndex((bar) => String(bar.date) > signalDate);
-    if (entryIndex < 0) return signal;
+    if (entryIndex < 0) return { ...signal, planOutcome };
     const entryBar = bars[entryIndex];
-    if (Date.parse(entryBar.date) - Date.parse(signalDate) > 10 * 86400000) return signal;
+    if (Date.parse(entryBar.date) - Date.parse(signalDate) > 10 * 86400000) return { ...signal, planOutcome };
     const slippage = Math.max(0, finite(costs.slippageRate) ?? 0.0005);
     const commission = Math.max(0, finite(costs.commissionRate) ?? 0.00025);
     const stamp = Math.max(0, finite(costs.stampDutyRate) ?? 0.0005);
@@ -319,24 +333,33 @@
       ...signal,
       entry: { date: String(entryBar.date), price: entryPrice },
       outcomes,
-      status: outcomes[10] ? "complete" : "tracking"
+      planOutcome,
+      status: outcomes[10] && (
+        !signal.executionPlan ||
+        ["complete", "missed", "invalidated", "ambiguous", "external"].includes(planOutcome?.status)
+      ) ? "complete" : "tracking"
     };
   }
 
   function summarizeSignals(values = [], horizon = 5) {
     const signals = values.map(normalizeSignal).filter(Boolean);
-    const settled = signals.filter((item) => Number.isFinite(item.outcomes?.[horizon]?.netReturn));
+    const comparableSignals = signals.filter((item) => item.source !== "尾盘观察" && item.executionPlan?.horizon !== "overnight");
+    const settled = comparableSignals.filter((item) => Number.isFinite(item.outcomes?.[horizon]?.netReturn));
     const returns = settled.map((item) => item.outcomes[horizon].netReturn);
     const excess = settled.map((item) => item.outcomes[horizon].excessReturn).filter(Number.isFinite);
+    const planValidation = typeof summarizePlanOutcomes === "function"
+      ? summarizePlanOutcomes(signals, horizon)
+      : null;
     return {
       total: signals.length,
       settled: settled.length,
-      tracking: signals.length - settled.length,
+      tracking: comparableSignals.length - settled.length,
       hitRate: returns.length ? returns.filter((value) => value > 0).length / returns.length : null,
       averageReturn: returns.length ? returns.reduce((sum, value) => sum + value, 0) / returns.length : null,
       averageExcessReturn: excess.length ? excess.reduce((sum, value) => sum + value, 0) / excess.length : null,
-      bySource: [...new Set(signals.map((item) => item.source))].map((source) => {
-        const rows = signals.filter((item) => item.source === source && Number.isFinite(item.outcomes?.[horizon]?.netReturn));
+      planValidation,
+      bySource: [...new Set(comparableSignals.map((item) => item.source))].map((source) => {
+        const rows = comparableSignals.filter((item) => item.source === source && Number.isFinite(item.outcomes?.[horizon]?.netReturn));
         return {
           source,
           count: rows.length,
@@ -380,7 +403,9 @@
         detail: days < 0 ? "不要沿用过期价格，重新分析后再建计划" : `剩余 ${days} 天，请核对触发条件`
       });
     });
-    const tracking = signals.map(normalizeSignal).filter(Boolean).filter((item) => item.status !== "complete");
+    const tracking = signals.map(normalizeSignal).filter(Boolean).filter((item) =>
+      item.status !== "complete" && item.source !== "尾盘观察" && item.executionPlan?.horizon !== "overnight"
+    );
     if (tracking.length) items.push({
       id: "signals-tracking",
       priority: 45,

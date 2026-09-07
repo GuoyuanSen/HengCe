@@ -1,5 +1,6 @@
 const { isEligibleCode, isRiskName } = require("./recommendations.js");
 const { nextTradingDateKey, tradingDayStatus } = require("../src/trading_calendar.js");
+const { buildOvernightExecutionPlan } = require("../src/execution_plan.js");
 
 function finiteNumber(value) {
   const number = Number(value);
@@ -227,17 +228,21 @@ function buildOvernightSnapshot(items, options = {}) {
   const limitUpPassed = items.filter((item) => item.limitUp?.found);
   const ranked = items
     .filter((item) => item.limitUp?.found && item.intraday?.passes)
-    .map((item) => ({
-      ...item.candidate,
-      limitUp: item.limitUp,
-      intraday: item.intraday,
-      validation: item.validation,
-      score: overnightScore(item.candidate, item.intraday, item.limitUp)
-    }))
+    .map((item) => {
+      const candidate = {
+        ...item.candidate,
+        limitUp: item.limitUp,
+        intraday: item.intraday,
+        validation: item.validation,
+        score: overnightScore(item.candidate, item.intraday, item.limitUp)
+      };
+      return { ...candidate, executionPlan: buildOvernightExecutionPlan(candidate) };
+    })
     .sort((left, right) => right.score - left.score || right.amount - left.amount);
+  const executableRanked = ranked.filter((item) => item.executionPlan?.actionable);
   const counts = new Map();
   const picks = [];
-  for (const item of ranked) {
+  for (const item of executableRanked) {
     const count = counts.get(item.industry) || 0;
     if (item.industry !== "未分类" && count >= 2) continue;
     picks.push(item);
@@ -255,10 +260,15 @@ function buildOvernightSnapshot(items, options = {}) {
             : `均价线上方${Math.round(item.intraday.aboveRatio * 100)}%`
         );
       }
+      const executionPlan = buildOvernightExecutionPlan({ ...item.candidate, intraday: item.intraday });
+      if (item.limitUp?.found && item.intraday?.passes && !executionPlan.actionable) {
+        failedRules.push(executionPlan.label || "执行区间不足");
+      }
       return {
         ...item.candidate,
         limitUp: item.limitUp,
         intraday: item.intraday,
+        executionPlan,
         failedRules
       };
     })
@@ -275,12 +285,14 @@ function buildOvernightSnapshot(items, options = {}) {
       poolSize: options.poolSize || 0,
       prefilteredCount: options.prefilteredCount || items.length,
       checkedCount: items.length,
-      qualifiedCount: ranked.length,
+      qualifiedCount: executableRanked.length,
+      structureQualifiedCount: ranked.length,
       funnel: {
         ...(options.funnel || {}),
         checked: items.length,
         recentLimitUp: limitUpPassed.length,
-        intradayAndLimitUp: ranked.length
+        intradayAndLimitUp: ranked.length,
+        executionPlan: executableRanked.length
       }
     },
     rules: {
@@ -291,7 +303,8 @@ function buildOvernightSnapshot(items, options = {}) {
       minimumVolumeRatio: 1,
       maximumFloatMarketCap: 30e9,
       turnoverRate: [5, 10],
-      minimumAboveAverageRatio: 0.95
+      minimumAboveAverageRatio: 0.95,
+      maximumStrategyChangePercent: 5
     },
     picks,
     nearMisses
