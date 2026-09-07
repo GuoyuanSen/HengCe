@@ -926,12 +926,44 @@
                 <div id="ai-invalidations" class="finding-list"></div>
               </article>
             </section>
-            <section class="ai-history-section">
-              <div class="section-heading"><div><h2>追踪记录</h2><span>保存在本机，最多保留最近80份</span></div></div>
-              <div id="ai-history" class="ai-history"></div>
-              <p id="ai-limitations" class="hotspots-note"></p>
-            </section>
           </div>
+          <section class="ai-history-section">
+            <div class="section-heading">
+              <div>
+                <h2>追踪记录</h2>
+                <span>普通记录保留最近80份，置顶记录长期保留</span>
+              </div>
+              <button id="clear-ai-history" class="secondary-button danger-button" type="button" title="清空全部追踪记录">清空全部</button>
+            </div>
+            <div class="ai-history-toolbar">
+              <label>
+                <span>范围</span>
+                <select id="ai-history-scope">
+                  <option value="current">当前标的</option>
+                  <option value="all">全部记录</option>
+                  <option value="holdings">仅看持仓</option>
+                  <option value="pinned">仅看置顶</option>
+                </select>
+              </label>
+              <label>
+                <span>变化</span>
+                <select id="ai-history-tone">
+                  <option value="all">全部变化</option>
+                  <option value="positive">转强</option>
+                  <option value="negative">转弱</option>
+                  <option value="neutral">变化不大</option>
+                  <option value="defensive">谨慎防守</option>
+                </select>
+              </label>
+              <label class="ai-history-search">
+                <span>查找</span>
+                <div><i data-lucide="search"></i><input id="ai-history-search" maxlength="80" placeholder="股票名称或代码"></div>
+              </label>
+              <span id="ai-history-result-count" class="data-confidence">0 份</span>
+            </div>
+            <div id="ai-history" class="ai-history"></div>
+            <p id="ai-limitations" class="hotspots-note"></p>
+          </section>
           <p class="hotspots-note ai-disclaimer">AI 只解释已提供的公开数据，不连接券商、不自动下单，也不构成投资建议。</p>
         </section>
 
@@ -1220,16 +1252,16 @@
             <div class="section-heading">
               <div>
                 <h2>本地备份与恢复</h2>
-                <span>备份持仓、交易流水、计划、复盘和个人设置，不包含 AI API Key</span>
+                <span>重装、换设备或重要升级前使用；备份个人记录，不包含 AI API Key</span>
               </div>
-              <span id="backup-status" class="data-confidence">仅本机文件</span>
+              <span id="backup-status" class="data-confidence">低频数据保险</span>
             </div>
             <div class="backup-settings-row">
               <label><span>备份密码（可选）</span><input id="backup-password" type="password" maxlength="120" autocomplete="new-password" placeholder="设置后使用 AES-256-GCM 加密"></label>
               <button id="save-local-backup" class="primary-button" type="button">导出备份</button>
               <button id="restore-local-backup" class="secondary-button" type="button">恢复备份</button>
             </div>
-            <p class="hotspots-note">恢复会覆盖衡策的个人数据并重新载入页面，但不会修改其他应用数据。</p>
+            <p class="hotspots-note">平时无需操作。恢复会覆盖衡策当前的个人数据并重新载入页面，但不会修改其他应用数据。</p>
           </section>
           <section class="update-section">
             <div class="update-icon"><i data-lucide="download"></i></div>
@@ -1372,7 +1404,7 @@
         <button class="primary-button dialog-submit" value="default">保存事件</button>
       </form>
     </dialog>
-    <div id="toast" class="toast hidden"></div>
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
     <script src="../node_modules/lucide/dist/umd/lucide.min.js"></script>
     <script src="engine.js"></script>

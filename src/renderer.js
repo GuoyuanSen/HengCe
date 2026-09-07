@@ -489,10 +489,10 @@ if (!window.hengce && isBrowserPreview) {
     notify: async () => true,
     openExternal: async (url) => window.open(url, "_blank"),
     checkForUpdate: async () => ({
-      currentVersion: "0.7.0",
-      latestVersion: "0.7.0",
-      tagName: "v0.7.0",
-      releaseName: "衡策 v0.7.0",
+      currentVersion: "0.7.2",
+      latestVersion: "0.7.2",
+      tagName: "v0.7.2",
+      releaseName: "衡策 v0.7.2",
       releaseNotes: "新增应用内更新检查、下载进度和 SHA-256 完整性校验。",
       assetName: "HengCe-Apple-Silicon.dmg",
       assetSize: 136e6,
@@ -500,7 +500,7 @@ if (!window.hengce && isBrowserPreview) {
       downloadable: true,
       available: false
     }),
-    appVersion: async () => "0.7.0",
+    appVersion: async () => "0.7.2",
     downloadUpdate: async () => ({ downloaded: true, fileName: "HengCe-Apple-Silicon.dmg" }),
     installUpdate: async () => ({ opened: true, willQuit: false }),
     saveBackup: async () => ({ saved: true, fileName: "HengCe-Demo.hengce-backup", encrypted: false }),
@@ -612,7 +612,15 @@ const {
   settleForwardRecords,
   upsertForwardRecord
 } = window.HengCeOvernightJournal;
-const { buildLocalTrackingReport, trackingTargets } = window.HengCeAiTracking;
+const {
+  buildLocalTrackingReport,
+  filterTrackingSnapshots,
+  normalizeTrackingHistory,
+  trackingSnapshotTone,
+  trackingSnapshotTrust,
+  trackingTargets,
+  upsertTrackingSnapshot
+} = window.HengCeAiTracking;
 const {
   answerIntelligenceQuestion,
   buildMacroPulse,
@@ -653,6 +661,7 @@ const storedOvernightJournal = readJSON("hengce.overnight.forward.v1", []);
 const storedWindowPreferences = readJSON("hengce.windowPreferences.v1", {});
 const storedAppearance = readJSON("hengce.appearance.v1", {});
 const storedAiSnapshots = readJSON("hengce.aiTracking.v1", []);
+const normalizedAiSnapshots = normalizeTrackingHistory(storedAiSnapshots);
 const storedIntelligenceHistory = readJSON("hengce.intelligence.history.v1", []);
 const storedIntelligenceSeen = readJSON("hengce.intelligence.seen.v1", []);
 const storedIntelligenceBookmarks = readJSON("hengce.intelligence.bookmarks.v1", []);
@@ -814,7 +823,16 @@ const state = {
   aiReportModel: "",
   aiLoading: false,
   aiError: "",
-  aiSnapshots: Array.isArray(storedAiSnapshots) ? storedAiSnapshots.slice(0, 80) : [],
+  aiSnapshots: normalizedAiSnapshots,
+  aiActiveSnapshotId: null,
+  aiExpandedSnapshotId: null,
+  aiHistoryScope: ["current", "all", "holdings", "pinned"].includes(storedUi.aiHistoryScope)
+    ? storedUi.aiHistoryScope
+    : "current",
+  aiHistoryTone: ["all", "positive", "negative", "neutral", "defensive"].includes(storedUi.aiHistoryTone)
+    ? storedUi.aiHistoryTone
+    : "all",
+  aiHistorySearch: String(storedUi.aiHistorySearch || "").slice(0, 80),
   assistantAnswer: Array.isArray(storedAssistantHistory) ? storedAssistantHistory[0] || null : null,
   assistantLoading: false,
   assistantHistory: Array.isArray(storedAssistantHistory) ? storedAssistantHistory.slice(0, 20) : [],
@@ -934,6 +952,9 @@ function saveUiState() {
     backtestYears: state.backtestYears,
     recommendationFilters: state.recommendationFilters,
     aiTargetCode: state.aiTargetCode,
+    aiHistoryScope: state.aiHistoryScope,
+    aiHistoryTone: state.aiHistoryTone,
+    aiHistorySearch: state.aiHistorySearch,
     overnightMarketScope: state.overnightMarketScope,
     intelligenceFilters: state.intelligenceFilters,
     intelligenceTheme: state.intelligenceTheme,
@@ -1008,12 +1029,41 @@ function refreshIcons() {
   }
 }
 
-function showToast(message) {
+function showToast(message, { actionLabel = "", onAction = null, duration = 2800 } = {}) {
   const toast = $("#toast");
-  toast.textContent = message;
+  toast.replaceChildren();
+  const textNode = document.createElement("span");
+  textNode.textContent = message;
+  toast.append(textNode);
+  if (actionLabel && typeof onAction === "function") {
+    const action = document.createElement("button");
+    action.type = "button";
+    action.textContent = actionLabel;
+    action.addEventListener("click", () => {
+      clearTimeout(showToast.timer);
+      onAction();
+    }, { once: true });
+    toast.append(action);
+  }
   toast.classList.remove("hidden");
   clearTimeout(showToast.timer);
-  showToast.timer = setTimeout(() => toast.classList.add("hidden"), 2800);
+  showToast.timer = setTimeout(() => toast.classList.add("hidden"), duration);
+}
+
+function initializeStaticUi() {
+  $$(".error-banner").forEach((element) => {
+    element.setAttribute("role", "alert");
+    element.setAttribute("aria-live", "assertive");
+  });
+  $$(".loading-state, .dashboard-skeleton").forEach((element) => {
+    element.setAttribute("aria-live", "polite");
+  });
+  $$("button[title]:not([aria-label])").forEach((button) => {
+    button.setAttribute("aria-label", button.title);
+  });
+  $$("button:not([type])").forEach((button) => {
+    if (!button.closest("form")) button.type = "button";
+  });
 }
 
 function setLoading(loading, { preserveContent = false } = {}) {
@@ -1539,16 +1589,13 @@ function renderHotspots() {
   const content = $("#hotspots-content");
   const error = $("#hotspots-error");
   const refreshButton = $("#refresh-hotspots");
-  loading.classList.toggle("hidden", !state.hotspotsLoading);
-  content.classList.toggle(
-    "hidden",
-    state.hotspotsLoading || !state.hotspots
-  );
+  loading.classList.toggle("hidden", !state.hotspotsLoading || Boolean(state.hotspots));
+  content.classList.toggle("hidden", !state.hotspots);
   error.textContent = state.hotspotsError;
   error.classList.toggle("hidden", !state.hotspotsError);
   refreshButton.disabled = state.hotspotsLoading;
   refreshButton.classList.toggle("rotating", state.hotspotsLoading);
-  if (!state.hotspots || state.hotspotsLoading) return;
+  if (!state.hotspots) return;
 
   const snapshot = state.hotspots;
   const summary = snapshot.summary;
@@ -1794,8 +1841,8 @@ function renderIntelligence() {
   const content = $("#intelligence-content");
   const error = $("#intelligence-error");
   const refreshButton = $("#refresh-intelligence");
-  loading.classList.toggle("hidden", !state.intelligenceLoading);
-  content.classList.toggle("hidden", state.intelligenceLoading && !state.intelligence);
+  loading.classList.toggle("hidden", !state.intelligenceLoading || Boolean(state.intelligence));
+  content.classList.toggle("hidden", !state.intelligence);
   error.textContent = state.intelligenceError;
   error.classList.toggle("hidden", !state.intelligenceError);
   refreshButton.disabled = state.intelligenceLoading;
@@ -2138,16 +2185,13 @@ function renderRecommendations() {
   const content = $("#recommendations-content");
   const error = $("#recommendations-error");
   const refreshButton = $("#refresh-recommendations");
-  loading.classList.toggle("hidden", !state.recommendationsLoading);
-  content.classList.toggle(
-    "hidden",
-    state.recommendationsLoading || !state.recommendations
-  );
+  loading.classList.toggle("hidden", !state.recommendationsLoading || Boolean(state.recommendations));
+  content.classList.toggle("hidden", !state.recommendations);
   error.textContent = state.recommendationsError;
   error.classList.toggle("hidden", !state.recommendationsError);
   refreshButton.disabled = state.recommendationsLoading;
   refreshButton.classList.toggle("rotating", state.recommendationsLoading);
-  if (!state.recommendations || state.recommendationsLoading) return;
+  if (!state.recommendations) return;
 
   const snapshot = state.recommendations;
   const summary = snapshot.summary;
@@ -2313,7 +2357,8 @@ function watchAlert(item, data) {
 function renderWatchlist() {
   const loading = $("#watchlist-loading");
   const error = $("#watchlist-error");
-  loading.classList.toggle("hidden", !state.watchlistLoading);
+  const hasVisibleWatchlist = state.watchlistData.size > 0 || state.watchlist.length === 0;
+  loading.classList.toggle("hidden", !state.watchlistLoading || hasVisibleWatchlist);
   error.textContent = state.watchlistError;
   error.classList.toggle("hidden", !state.watchlistError);
   $("#refresh-watchlist").disabled = state.watchlistLoading;
@@ -2368,12 +2413,26 @@ function renderWatchlist() {
   );
   $$(".remove-watch").forEach((button) =>
     button.addEventListener("click", () => {
+      const previous = [...state.watchlist];
+      const previousData = state.watchlistData.get(button.dataset.code);
+      const removed = state.watchlist.find((item) => item.code === button.dataset.code);
       state.watchlist = state.watchlist.filter((item) => item.code !== button.dataset.code);
       state.watchlistData.delete(button.dataset.code);
       writeJSON("hengce.watchlist.v1", state.watchlist);
       renderWatchlist();
       if (state.recommendations) renderRecommendations();
-      showToast("已移出观察列表");
+      showToast(`已移出观察列表${removed?.name ? `：${removed.name}` : ""}`, {
+        actionLabel: "撤销",
+        duration: 6000,
+        onAction: () => {
+          state.watchlist = previous;
+          if (previousData) state.watchlistData.set(button.dataset.code, previousData);
+          writeJSON("hengce.watchlist.v1", state.watchlist);
+          renderWatchlist();
+          if (state.recommendations) renderRecommendations();
+          showToast("已恢复观察标的");
+        }
+      });
     })
   );
   refreshIcons();
@@ -2445,13 +2504,13 @@ function renderCompass() {
   const content = $("#compass-content");
   const error = $("#compass-error");
   const refreshButton = $("#refresh-compass");
-  loading.classList.toggle("hidden", !state.compassLoading);
-  content.classList.toggle("hidden", state.compassLoading || !state.compass);
+  loading.classList.toggle("hidden", !state.compassLoading || Boolean(state.compass));
+  content.classList.toggle("hidden", !state.compass);
   error.textContent = state.compassError;
   error.classList.toggle("hidden", !state.compassError);
   refreshButton.disabled = state.compassLoading;
   refreshButton.classList.toggle("rotating", state.compassLoading);
-  if (!state.compass || state.compassLoading) return;
+  if (!state.compass) return;
   const snapshot = state.compass;
   const regime = snapshot.regime || {};
   $("#compass-regime").className = `compass-regime ${regime.tone || "neutral"}`;
@@ -2526,11 +2585,12 @@ function renderBreadth() {
   const content = $("#breadth-content");
   const error = $("#breadth-error");
   const refresh = $("#refresh-breadth");
-  loading.classList.toggle("hidden", !state.breadthLoading);
-  content.classList.toggle("hidden", state.breadthLoading && !state.breadth);
+  loading.classList.toggle("hidden", !state.breadthLoading || Boolean(state.breadth));
+  content.classList.toggle("hidden", !state.breadth);
   error.textContent = state.breadthError;
   error.classList.toggle("hidden", !state.breadthError);
   refresh.disabled = state.breadthLoading;
+  refresh.classList.toggle("rotating", state.breadthLoading);
   const snapshot = state.breadth;
   if (!snapshot) {
     $("#breadth-regime").innerHTML = '<span class="muted">市场宽度尚未加载</span>';
@@ -2603,11 +2663,12 @@ function renderMacro() {
   const content = $("#macro-content");
   const error = $("#macro-error");
   const refresh = $("#refresh-macro");
-  loading.classList.toggle("hidden", !state.macroLoading);
-  content.classList.toggle("hidden", state.macroLoading && !state.macro);
+  loading.classList.toggle("hidden", !state.macroLoading || Boolean(state.macro));
+  content.classList.toggle("hidden", !state.macro);
   error.textContent = state.macroError;
   error.classList.toggle("hidden", !state.macroError);
   refresh.disabled = state.macroLoading;
+  refresh.classList.toggle("rotating", state.macroLoading);
   if (!state.macro) {
     $("#macro-indicators").innerHTML = '<div class="empty-state"><strong>宏观数据尚未加载</strong><span>进入市场风向标后自动读取</span></div>';
     return;
@@ -2863,8 +2924,8 @@ function renderOvernight() {
   const content = $("#overnight-content");
   const error = $("#overnight-error");
   const refreshButton = $("#refresh-overnight");
-  loading.classList.toggle("hidden", !state.overnightLoading);
-  content.classList.toggle("hidden", state.overnightLoading && !state.overnight);
+  loading.classList.toggle("hidden", !state.overnightLoading || Boolean(state.overnight));
+  content.classList.toggle("hidden", !state.overnight);
   error.textContent = state.overnightError;
   error.classList.toggle("hidden", !state.overnightError);
   refreshButton.classList.toggle("rotating", state.overnightLoading);
@@ -4217,6 +4278,11 @@ function renderHoldings() {
   );
   $$(".delete-holding").forEach((button) =>
     button.addEventListener("click", () => {
+      const holding = state.holdings.find((item) => item.code === button.dataset.code);
+      if (!holding || !confirm(`确定删除 ${holding.name || holding.code} 的持仓记录吗？真实交易流水不会被删除。`)) return;
+      const previous = [...state.holdings];
+      const previousHistory = state.holdingHistories.get(button.dataset.code);
+      const previousProfile = state.profiles.get(button.dataset.code);
       state.holdings = state.holdings.filter(
         (item) => item.code !== button.dataset.code
       );
@@ -4226,7 +4292,20 @@ function renderHoldings() {
       renderHoldings();
       updatePortfolioRisk();
       renderDashboard();
-      showToast("持仓记录已删除");
+      showToast("持仓记录已删除，交易流水未修改", {
+        actionLabel: "撤销",
+        duration: 7000,
+        onAction: () => {
+          state.holdings = previous;
+          if (previousHistory) state.holdingHistories.set(button.dataset.code, previousHistory);
+          if (previousProfile) state.profiles.set(button.dataset.code, previousProfile);
+          writeJSON("hengce.holdings.v2", state.holdings);
+          renderHoldings();
+          updatePortfolioRisk();
+          renderDashboard();
+          showToast("持仓记录已恢复");
+        }
+      });
     })
   );
   refreshIcons();
@@ -4352,8 +4431,9 @@ function catalystDateParts(value) {
 function renderCatalystCalendar() {
   const loading = $("#catalyst-loading");
   if (!loading) return;
-  loading.classList.toggle("hidden", !state.catalystsLoading);
+  loading.classList.toggle("hidden", !state.catalystsLoading || allCatalysts().length > 0);
   $("#refresh-catalysts").disabled = state.catalystsLoading;
+  $("#refresh-catalysts").classList.toggle("rotating", state.catalystsLoading);
   const error = $("#catalyst-error");
   error.textContent = state.catalystsError;
   error.classList.toggle("hidden", !state.catalystsError);
@@ -4389,10 +4469,21 @@ function renderCatalystCalendar() {
   $("#catalyst-note").textContent = state.catalystSnapshot?.note || "日期来自公开披露和本机记录，预约日期可能调整。";
   $$(".open-catalyst").forEach((button) => button.addEventListener("click", () => window.hengce.openExternal(button.dataset.url)));
   $$(".delete-catalyst").forEach((button) => button.addEventListener("click", () => {
+    const previous = [...state.manualCatalysts];
+    const removed = state.manualCatalysts.find((item) => item.id === button.dataset.id);
     state.manualCatalysts = state.manualCatalysts.filter((item) => item.id !== button.dataset.id);
     persistTradingState();
     renderTradingWorkspace();
-    showToast("手工事件已删除");
+    showToast(`手工事件已删除${removed?.title ? `：${removed.title}` : ""}`, {
+      actionLabel: "撤销",
+      duration: 6000,
+      onAction: () => {
+        state.manualCatalysts = previous;
+        persistTradingState();
+        renderTradingWorkspace();
+        showToast("手工事件已恢复");
+      }
+    });
   }));
   refreshIcons();
 }
@@ -4540,10 +4631,20 @@ function renderTradeJournal() {
     : '<tr><td colspan="8" class="muted">还没有真实成交记录；这里不会混入回测或模拟收益</td></tr>';
   $$(".delete-trade-record").forEach((button) => button.addEventListener("click", () => {
     if (!confirm("只删除这条交易流水，不回滚持仓数量和成本。确定继续吗？")) return;
+    const previous = [...state.tradeJournal];
     state.tradeJournal = state.tradeJournal.filter((item) => item.id !== button.dataset.id);
     persistTradingState();
     renderTradingWorkspace();
-    showToast("交易流水已删除，持仓未被修改");
+    showToast("交易流水已删除，持仓未被修改", {
+      actionLabel: "撤销",
+      duration: 7000,
+      onAction: () => {
+        state.tradeJournal = previous;
+        persistTradingState();
+        renderTradingWorkspace();
+        showToast("交易流水已恢复，持仓未被修改");
+      }
+    });
   }));
   $$(".review-trade-record").forEach((button) => button.addEventListener("click", () => {
     const trade = state.tradeJournal.find((item) => item.id === button.dataset.id);
@@ -4594,6 +4695,7 @@ function renderSignalJournal() {
       `).join("")
     : '<tr><td colspan="8" class="muted">刷新 A股优选或保存交易计划后，将自动冻结真实信号</td></tr>';
   $("#refresh-signal-journal").disabled = state.signalJournalSettling;
+  $("#refresh-signal-journal").setAttribute("aria-busy", String(state.signalJournalSettling));
   $("#refresh-signal-journal").textContent = state.signalJournalSettling ? "更新中…" : "更新结果";
 }
 
@@ -5283,12 +5385,202 @@ function renderAiFindingList(selector, items, tone = "neutral") {
     : '<span class="muted">当前没有可确认的信息</span>';
 }
 
+function formatAiSnapshotTime(value, includeYear = false) {
+  const timestamp = new Date(value || "");
+  if (!Number.isFinite(timestamp.getTime())) return "时间未记录";
+  return timestamp.toLocaleString("zh-CN", {
+    ...(includeYear ? { year: "numeric" } : {}),
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function aiHistoryToneLabel(snapshot) {
+  const tone = trackingSnapshotTone(snapshot);
+  if (tone === "positive") return { tone, label: "转强" };
+  if (tone === "negative") return { tone, label: "转弱" };
+  if (tone === "mixed") return { tone, label: "分化" };
+  return { tone, label: "变化不大" };
+}
+
+function aiHistoryList(items, emptyText) {
+  return items?.length
+    ? `<ul>${items.map((item) => `<li>${escapeHTML(item)}</li>`).join("")}</ul>`
+    : `<span class="muted">${escapeHTML(emptyText)}</span>`;
+}
+
+function aiHistoryDetail(snapshot, trust) {
+  const facts = snapshot.facts || {};
+  const report = snapshot.report || {};
+  const plan = report.observationPlan || {};
+  const zone = plan.zoneLow != null && plan.zoneHigh != null
+    ? `${number(plan.zoneLow)} – ${number(plan.zoneHigh)}`
+    : "尚未形成";
+  const sourceLabel = snapshot.source === "ai"
+    ? `AI 解释${snapshot.model ? ` · ${snapshot.model}` : ""}`
+    : "本地规则引擎";
+  const trustDetail = trust.quoteAt
+    ? `行情 ${formatAiSnapshotTime(trust.quoteAt, true)} · 快照 ${formatAiSnapshotTime(snapshot.createdAt, true)}`
+    : `快照 ${formatAiSnapshotTime(snapshot.createdAt, true)} · 行情时间未记录`;
+  return `
+    <div class="ai-history-metrics">
+      <div><span>记录价格</span><strong>${number(facts.quote?.price)}</strong><small>${percent(facts.quote?.percentChange)}</small></div>
+      <div><span>量化评分</span><strong>${Number.isFinite(Number(facts.technical?.score)) ? `${number(facts.technical.score, 0)} 分` : "--"}</strong><small>${escapeHTML(facts.technical?.trend || "趋势待确认")}</small></div>
+      <div><span>观察区间</span><strong>${zone}</strong><small>突破 ${plan.breakout != null ? number(plan.breakout) : "--"}</small></div>
+      <div><span>策略失效位</span><strong>${plan.invalidation != null ? number(plan.invalidation) : "--"}</strong><small>${escapeHTML(report.confidence || "较低")}置信度</small></div>
+    </div>
+    <div class="ai-history-detail-grid">
+      <div><h3>相对变化</h3>${report.changes?.length ? report.changes.map((item) => `<div class="ai-history-detail-change ${escapeHTML(item.type)}"><strong>${escapeHTML(item.title)}</strong><span>${escapeHTML(item.detail)}</span></div>`).join("") : '<span class="muted">暂无可比较变化</span>'}</div>
+      <div><h3>积极因素</h3>${aiHistoryList(report.catalysts, "暂无确认项")}</div>
+      <div><h3>主要风险</h3>${aiHistoryList(report.risks, "暂无已识别风险")}</div>
+    </div>
+    <div class="ai-history-provenance">
+      <span class="history-trust ${escapeHTML(trust.status)}">${escapeHTML(trust.label)}</span>
+      <span>${escapeHTML(sourceLabel)}</span>
+      <span>${escapeHTML(trust.source)}</span>
+      <span>${escapeHTML(trustDetail)}</span>
+    </div>
+  `;
+}
+
+function persistAiSnapshots() {
+  state.aiSnapshots = normalizeTrackingHistory(state.aiSnapshots);
+  writeJSON("hengce.aiTracking.v1", state.aiSnapshots);
+}
+
+function syncAiReportFromLatest(code = state.aiTargetCode) {
+  const latest = latestAiSnapshot(code);
+  state.aiFacts = latest?.facts || null;
+  state.aiReport = latest?.report || null;
+  state.aiReportSource = latest?.source || "local";
+  state.aiReportModel = latest?.model || "";
+  state.aiActiveSnapshotId = latest?.id || null;
+}
+
+function restoreAiHistory(snapshots, message = "追踪记录已恢复") {
+  state.aiSnapshots = normalizeTrackingHistory(snapshots);
+  persistAiSnapshots();
+  syncAiReportFromLatest();
+  renderAiPage();
+  showToast(message);
+}
+
+function deleteAiHistoryItem(id) {
+  const snapshot = state.aiSnapshots.find((item) => item.id === id);
+  if (!snapshot) return;
+  const previous = [...state.aiSnapshots];
+  state.aiSnapshots = state.aiSnapshots.filter((item) => item.id !== id);
+  persistAiSnapshots();
+  if (state.aiExpandedSnapshotId === id) state.aiExpandedSnapshotId = null;
+  if (state.aiActiveSnapshotId === id) syncAiReportFromLatest();
+  renderAiPage();
+  showToast(`已删除 ${snapshot.name} ${snapshot.code} 的追踪记录`, {
+    actionLabel: "撤销",
+    duration: 6000,
+    onAction: () => restoreAiHistory(previous)
+  });
+}
+
+function clearAiHistory() {
+  if (!state.aiSnapshots.length) return;
+  if (!confirm(`将清空本机保存的 ${state.aiSnapshots.length} 份追踪记录，并重置前后比较基线。确定继续吗？`)) return;
+  const previous = [...state.aiSnapshots];
+  state.aiSnapshots = [];
+  state.aiExpandedSnapshotId = null;
+  state.aiFacts = null;
+  state.aiReport = null;
+  state.aiActiveSnapshotId = null;
+  persistAiSnapshots();
+  renderAiPage();
+  showToast("追踪记录与比较基线已清空", {
+    actionLabel: "撤销",
+    duration: 7000,
+    onAction: () => restoreAiHistory(previous)
+  });
+}
+
+function toggleAiHistoryPin(id) {
+  let pinned = false;
+  state.aiSnapshots = state.aiSnapshots.map((item) => {
+    if (item.id !== id) return item;
+    pinned = !item.pinned;
+    return { ...item, pinned };
+  });
+  persistAiSnapshots();
+  renderAiTargets();
+  renderAiHistory();
+  refreshIcons();
+  showToast(pinned ? "已置顶，该记录不会被自动清理" : "已取消置顶");
+}
+
+function renderAiHistory() {
+  const container = $("#ai-history");
+  const history = filterTrackingSnapshots(state.aiSnapshots, {
+    scope: state.aiHistoryScope,
+    tone: state.aiHistoryTone,
+    query: state.aiHistorySearch,
+    currentCode: state.aiTargetCode,
+    holdingCodes: state.holdings.map((item) => item.code)
+  });
+  $("#ai-history-scope").value = state.aiHistoryScope;
+  $("#ai-history-tone").value = state.aiHistoryTone;
+  $("#ai-history-search").value = state.aiHistorySearch;
+  $("#ai-history-result-count").textContent = `${history.length} / ${state.aiSnapshots.length} 份`;
+  $("#clear-ai-history").disabled = state.aiSnapshots.length === 0;
+  $("#ai-limitations").textContent = state.aiReport
+    ? `当前报告数据局限：${(state.aiReport.dataLimitations || []).join("；") || "仅基于当前提供的数据"}`
+    : "记录只保存在当前设备；来源、行情时间和字段完整度会随快照一并保留。";
+  if (!history.length) {
+    container.innerHTML = `<div class="empty-state compact"><strong>${state.aiSnapshots.length ? "当前筛选下没有记录" : "还没有追踪记录"}</strong><span>${state.aiSnapshots.length ? "可调整范围、变化类型或搜索条件" : "生成追踪后会在这里形成可比较的本地快照"}</span></div>`;
+    return;
+  }
+  container.innerHTML = history.map((snapshot, index) => {
+    const tone = aiHistoryToneLabel(snapshot);
+    const stanceTone = snapshot.report?.stance === "积极观察"
+      ? "positive"
+      : snapshot.report?.stance === "谨慎防守" ? "negative" : "neutral";
+    const trust = trackingSnapshotTrust(snapshot);
+    const expanded = state.aiExpandedSnapshotId === snapshot.id;
+    const detailId = `ai-history-detail-${index}`;
+    const changeTags = (snapshot.report?.changes || []).slice(0, 2)
+      .map((item) => `<em class="${escapeHTML(item.type)}">${escapeHTML(item.title)}</em>`)
+      .join("");
+    return `
+      <article class="ai-history-item ${snapshot.pinned ? "pinned" : ""}">
+        <div class="ai-history-row">
+          <button class="ai-history-main" type="button" data-id="${escapeHTML(snapshot.id)}" aria-expanded="${expanded}" aria-controls="${detailId}">
+            <span class="ai-history-identity"><strong>${escapeHTML(snapshot.name)}</strong><small>${escapeHTML(snapshot.code)} · ${formatAiSnapshotTime(snapshot.createdAt)}</small></span>
+            <span class="ai-history-stance ${stanceTone}"><strong>${escapeHTML(snapshot.report?.stance || "等待数据")}</strong><small>${escapeHTML(tone.label)}</small></span>
+            <span class="ai-history-summary">${escapeHTML(snapshot.report?.summary || "暂无摘要")}</span>
+            <span class="ai-history-tags">${changeTags || '<em class="neutral">建立基线</em>'}${snapshot.mergedCount > 1 ? `<em class="merged">已合并 ${snapshot.mergedCount} 次</em>` : ""}</span>
+            <i data-lucide="chevron-down"></i>
+          </button>
+          <div class="ai-history-actions">
+            <button class="table-action pin-ai-history ${snapshot.pinned ? "active" : ""}" type="button" data-id="${escapeHTML(snapshot.id)}" title="${snapshot.pinned ? "取消置顶" : "置顶并长期保留"}" aria-label="${snapshot.pinned ? "取消置顶" : "置顶并长期保留"}"><i data-lucide="pin"></i></button>
+            <button class="table-action delete-ai-history" type="button" data-id="${escapeHTML(snapshot.id)}" title="删除这条追踪记录" aria-label="删除 ${escapeHTML(snapshot.name)} 的追踪记录"><i data-lucide="trash-2"></i></button>
+          </div>
+        </div>
+        <div id="${detailId}" class="ai-history-detail ${expanded ? "" : "hidden"}">${aiHistoryDetail(snapshot, trust)}</div>
+      </article>
+    `;
+  }).join("");
+  [...container.querySelectorAll(".ai-history-main")].forEach((button) => button.addEventListener("click", () => {
+    state.aiExpandedSnapshotId = state.aiExpandedSnapshotId === button.dataset.id ? null : button.dataset.id;
+    renderAiHistory();
+    refreshIcons();
+  }));
+  [...container.querySelectorAll(".pin-ai-history")].forEach((button) => button.addEventListener("click", () => toggleAiHistoryPin(button.dataset.id)));
+  [...container.querySelectorAll(".delete-ai-history")].forEach((button) => button.addEventListener("click", () => deleteAiHistoryItem(button.dataset.id)));
+}
+
 function renderAiReport() {
   const report = state.aiReport;
   const facts = state.aiFacts;
   const content = $("#ai-content");
   $("#ai-empty").classList.toggle("hidden", Boolean(report) || state.aiLoading);
-  content.classList.toggle("hidden", !report || state.aiLoading);
+  content.classList.toggle("hidden", !report);
   if (!report || !facts) return;
   const price = facts.quote?.price;
   const score = facts.technical?.score;
@@ -5318,11 +5610,6 @@ function renderAiReport() {
     ["策略失效位", plan.invalidation != null ? number(plan.invalidation) : "--"]
   ].map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join("");
   $("#ai-plan-rationale").textContent = plan.rationale || "等待更多数据确认";
-  const history = state.aiSnapshots.filter((item) => item.code === facts.code).slice(0, 6);
-  $("#ai-history").innerHTML = history.length
-    ? history.map((item) => `<div><time>${new Date(item.createdAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</time><strong>${escapeHTML(item.report?.stance || "等待数据")}</strong><span>${escapeHTML(item.report?.summary || "")}</span></div>`).join("")
-    : '<span class="muted">本次结果将成为第一份历史快照</span>';
-  $("#ai-limitations").textContent = `数据局限：${(report.dataLimitations || []).join("；") || "仅基于当前提供的数据"}`;
 }
 
 function renderAiPage() {
@@ -5333,14 +5620,18 @@ function renderAiPage() {
     state.aiReport = latest?.report || null;
     state.aiReportSource = latest?.source || "local";
     state.aiReportModel = latest?.model || "";
+    state.aiActiveSnapshotId = latest?.id || null;
   }
   renderAiConfig();
   renderAssistant();
   $("#ai-error").textContent = state.aiError;
   $("#ai-error").classList.toggle("hidden", !state.aiError);
-  $("#ai-loading").classList.toggle("hidden", !state.aiLoading);
+  $("#ai-loading").classList.toggle("hidden", !state.aiLoading || Boolean(state.aiReport));
   $("#run-ai-tracking").disabled = state.aiLoading;
+  $("#run-ai-tracking span").textContent = state.aiLoading ? "追踪中…" : "生成本次追踪";
+  $("#run-ai-tracking").setAttribute("aria-busy", String(state.aiLoading));
   renderAiReport();
+  renderAiHistory();
   refreshIcons();
 }
 
@@ -5370,7 +5661,7 @@ async function generateAiTracking() {
     state.aiReport = report;
     state.aiReportSource = source;
     state.aiReportModel = model;
-    state.aiSnapshots.unshift({
+    const historyResult = upsertTrackingSnapshot(state.aiSnapshots, {
       code: facts.code,
       name: facts.name,
       createdAt: facts.observedAt,
@@ -5379,9 +5670,12 @@ async function generateAiTracking() {
       facts,
       report
     });
-    state.aiSnapshots = state.aiSnapshots.slice(0, 80);
-    writeJSON("hengce.aiTracking.v1", state.aiSnapshots);
-    showToast(source === "ai" ? "AI 追踪分析已更新" : "本地量化追踪摘要已更新");
+    state.aiSnapshots = historyResult.snapshots;
+    state.aiActiveSnapshotId = historyResult.snapshot?.id || null;
+    persistAiSnapshots();
+    showToast(historyResult.merged
+      ? "结论变化不大，已合并更新最近记录"
+      : source === "ai" ? "AI 追踪分析已更新" : "本地量化追踪摘要已更新");
   } catch (error) {
     state.aiError = `追踪失败：${aiErrorMessage(error)}`;
   } finally {
@@ -5438,12 +5732,14 @@ function renderAssistant() {
   $("#assistant-mode").textContent = state.aiConfig?.hasApiKey
     ? `AI · ${state.aiConfig.model}`
     : "本地规则";
-  $("#assistant-loading").classList.toggle("hidden", !state.assistantLoading);
-  $("#ask-assistant").disabled = state.assistantLoading;
   const container = $("#assistant-answer");
   const entry = state.assistantAnswer?.code === state.aiTargetCode
     ? state.assistantAnswer
     : state.assistantHistory.find((item) => item.code === state.aiTargetCode) || null;
+  $("#assistant-loading").classList.toggle("hidden", !state.assistantLoading || Boolean(entry?.answer));
+  $("#ask-assistant").disabled = state.assistantLoading;
+  $("#ask-assistant").setAttribute("aria-busy", String(state.assistantLoading));
+  $("#ask-assistant").textContent = state.assistantLoading ? "分析中…" : "分析问题";
   if (!entry?.answer) {
     container.className = "assistant-answer empty";
     container.innerHTML = "<span>输入问题后生成分视角、可验证的回答</span>";
@@ -5719,12 +6015,16 @@ async function installUpdate() {
 }
 
 function switchView(view) {
+  const changed = state.activeView !== view;
   state.activeView = view;
   if (view === "intelligence") state.intelligenceUnseenImportant = 0;
   saveUiState();
-  $$(".nav-item").forEach((button) =>
-    button.classList.toggle("active", button.dataset.view === view)
-  );
+  $$(".nav-item").forEach((button) => {
+    const active = button.dataset.view === view;
+    button.classList.toggle("active", active);
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
   $$(".view").forEach((section) =>
     section.classList.toggle("active", section.id === `${view}-view`)
   );
@@ -5756,6 +6056,9 @@ function switchView(view) {
   if (view === "holdings") updateHoldingQuotes();
   if (view === "settings") renderDataHealth();
   if (view === "dashboard") schedulePriceChart();
+  if (changed) requestAnimationFrame(() => {
+    $(".workspace").scrollTop = 0;
+  });
 }
 
 function bindEvents() {
@@ -5824,6 +6127,27 @@ function bindEvents() {
   $("#add-catalyst").addEventListener("click", openCatalystDialog);
   $("#create-trade-plan").addEventListener("click", () => openPlanDialog(activePlanForCode() || currentPlanDraft()));
   $("#run-ai-tracking").addEventListener("click", generateAiTracking);
+  $("#clear-ai-history").addEventListener("click", clearAiHistory);
+  $("#ai-history-scope").addEventListener("change", (event) => {
+    state.aiHistoryScope = event.currentTarget.value;
+    state.aiExpandedSnapshotId = null;
+    saveUiState();
+    renderAiHistory();
+    refreshIcons();
+  });
+  $("#ai-history-tone").addEventListener("change", (event) => {
+    state.aiHistoryTone = event.currentTarget.value;
+    state.aiExpandedSnapshotId = null;
+    saveUiState();
+    renderAiHistory();
+    refreshIcons();
+  });
+  $("#ai-history-search").addEventListener("input", (event) => {
+    state.aiHistorySearch = event.currentTarget.value.slice(0, 80);
+    saveUiState();
+    renderAiHistory();
+    refreshIcons();
+  });
   $("#ask-assistant").addEventListener("click", askContextAssistant);
   $("#assistant-question").addEventListener("keydown", (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") askContextAssistant();
@@ -5838,6 +6162,8 @@ function bindEvents() {
     state.aiTargetCode = event.currentTarget.value;
     state.aiFacts = null;
     state.aiReport = null;
+    state.aiActiveSnapshotId = null;
+    state.aiExpandedSnapshotId = null;
     state.aiError = "";
     state.assistantAnswer = state.assistantHistory.find((item) => item.code === state.aiTargetCode) || null;
     saveUiState();
@@ -6173,6 +6499,7 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
 populateSettings();
 populateAlertSettings();
 restoreUiControls();
+initializeStaticUi();
 bindEvents();
 loadInitialMarketData();
 window.hengce.setWindowPreferences(state.windowPreferences).catch(() => {});

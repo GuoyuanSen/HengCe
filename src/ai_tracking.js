@@ -5,6 +5,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function createAiTracking() {
   const STANCES = ["积极观察", "中性观察", "谨慎防守", "等待数据"];
   const CONFIDENCE_LEVELS = ["较高", "中等", "较低"];
+  const TRACKING_HISTORY_LIMIT = 80;
+  const TRACKING_DEDUPE_MINUTES = 30;
 
   const TRACKING_REPORT_SCHEMA = {
     type: "object",
@@ -226,6 +228,197 @@
     return output;
   }
 
+  function validIsoTime(value) {
+    const timestamp = new Date(value || "").getTime();
+    return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : "";
+  }
+
+  function trackingSnapshotId(snapshot = {}, index = 0) {
+    const code = text(snapshot.code || snapshot.facts?.code, 6);
+    const createdAt = validIsoTime(snapshot.createdAt || snapshot.facts?.observedAt);
+    const existing = text(snapshot.id, 120);
+    if (existing) return existing;
+    return `track-${code || "unknown"}-${createdAt ? Date.parse(createdAt) : 0}-${index}`;
+  }
+
+  function normalizeTrackingSnapshot(snapshot = {}, index = 0) {
+    const code = text(snapshot.code || snapshot.facts?.code, 6);
+    const createdAt = validIsoTime(snapshot.createdAt || snapshot.facts?.observedAt);
+    if (!/^\d{6}$/.test(code) || !createdAt) return null;
+    const updatedAt = validIsoTime(snapshot.updatedAt) || createdAt;
+    const firstCreatedAt = validIsoTime(snapshot.firstCreatedAt) || createdAt;
+    return {
+      ...snapshot,
+      id: trackingSnapshotId({ ...snapshot, code, createdAt }, index),
+      code,
+      name: text(snapshot.name || snapshot.facts?.name || code, 40),
+      createdAt,
+      updatedAt,
+      firstCreatedAt,
+      pinned: snapshot.pinned === true,
+      mergedCount: Math.max(1, Math.floor(finite(snapshot.mergedCount) || 1)),
+      source: snapshot.source === "ai" ? "ai" : "local",
+      model: text(snapshot.model, 80),
+      facts: snapshot.facts && typeof snapshot.facts === "object" ? snapshot.facts : {},
+      report: normalizeTrackingReport(snapshot.report || {})
+    };
+  }
+
+  function sortTrackingHistory(values = []) {
+    return [...values].sort((left, right) =>
+      new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+    );
+  }
+
+  function pruneTrackingHistory(values = [], limit = TRACKING_HISTORY_LIMIT) {
+    let ordinaryCount = 0;
+    return sortTrackingHistory(values).filter((snapshot) => {
+      if (snapshot.pinned) return true;
+      ordinaryCount += 1;
+      return ordinaryCount <= limit;
+    });
+  }
+
+  function normalizeTrackingHistory(values = [], limit = TRACKING_HISTORY_LIMIT) {
+    const seen = new Set();
+    const normalized = (Array.isArray(values) ? values : [])
+      .map((snapshot, index) => normalizeTrackingSnapshot(snapshot, index))
+      .filter(Boolean)
+      .filter((snapshot) => {
+        if (seen.has(snapshot.id)) return false;
+        seen.add(snapshot.id);
+        return true;
+      });
+    return pruneTrackingHistory(normalized, limit);
+  }
+
+  function sameOptionalText(left, right) {
+    return text(left, 80) === text(right, 80);
+  }
+
+  function nearOptionalNumber(left, right, tolerance, ratio = false) {
+    const leftNumber = finite(left);
+    const rightNumber = finite(right);
+    if (leftNumber == null || rightNumber == null) return leftNumber === rightNumber;
+    if (ratio && rightNumber !== 0) return Math.abs(leftNumber / rightNumber - 1) <= tolerance;
+    return Math.abs(leftNumber - rightNumber) <= tolerance;
+  }
+
+  function equivalentTrackingSnapshots(left, right) {
+    if (!left || !right || left.code !== right.code || left.source !== right.source) return false;
+    return (
+      sameOptionalText(left.report?.stance, right.report?.stance) &&
+      sameOptionalText(left.facts?.technical?.trend, right.facts?.technical?.trend) &&
+      nearOptionalNumber(left.facts?.technical?.score, right.facts?.technical?.score, 1) &&
+      nearOptionalNumber(left.facts?.quote?.price, right.facts?.quote?.price, 0.003, true) &&
+      nearOptionalNumber(
+        left.report?.observationPlan?.invalidation,
+        right.report?.observationPlan?.invalidation,
+        0.003,
+        true
+      )
+    );
+  }
+
+  function upsertTrackingSnapshot(values, snapshot, {
+    limit = TRACKING_HISTORY_LIMIT,
+    dedupeMinutes = TRACKING_DEDUPE_MINUTES
+  } = {}) {
+    const history = normalizeTrackingHistory(values, limit);
+    const incoming = normalizeTrackingSnapshot(snapshot, history.length);
+    if (!incoming) return { snapshots: history, snapshot: null, merged: false };
+    const incomingTime = new Date(incoming.createdAt).getTime();
+    const latestForCode = history.find((item) => item.code === incoming.code);
+    const minutesSinceLatest = latestForCode
+      ? (incomingTime - new Date(latestForCode.createdAt).getTime()) / 60000
+      : Number.POSITIVE_INFINITY;
+    const duplicate = latestForCode &&
+      minutesSinceLatest >= 0 &&
+      minutesSinceLatest <= dedupeMinutes &&
+      equivalentTrackingSnapshots(latestForCode, incoming)
+        ? latestForCode
+        : null;
+    if (!duplicate) {
+      return {
+        snapshots: pruneTrackingHistory([incoming, ...history], limit),
+        snapshot: incoming,
+        merged: false
+      };
+    }
+    const mergedSnapshot = {
+      ...duplicate,
+      ...incoming,
+      id: duplicate.id,
+      pinned: duplicate.pinned,
+      firstCreatedAt: duplicate.firstCreatedAt || duplicate.createdAt,
+      mergedCount: Math.max(1, Number(duplicate.mergedCount) || 1) + 1
+    };
+    return {
+      snapshots: pruneTrackingHistory(
+        history.map((item) => item.id === duplicate.id ? mergedSnapshot : item),
+        limit
+      ),
+      snapshot: mergedSnapshot,
+      merged: true
+    };
+  }
+
+  function trackingSnapshotTone(snapshot = {}) {
+    const changes = Array.isArray(snapshot.report?.changes) ? snapshot.report.changes : [];
+    const positive = changes.some((item) => item?.type === "positive");
+    const negative = changes.some((item) => item?.type === "negative");
+    if (positive && negative) return "mixed";
+    if (positive) return "positive";
+    if (negative) return "negative";
+    return "neutral";
+  }
+
+  function filterTrackingSnapshots(values, {
+    scope = "current",
+    tone = "all",
+    query = "",
+    currentCode = "",
+    holdingCodes = []
+  } = {}) {
+    const holdings = new Set((Array.isArray(holdingCodes) ? holdingCodes : []).map(String));
+    const needle = text(query, 80).toLocaleLowerCase();
+    return normalizeTrackingHistory(values)
+      .filter((snapshot) => {
+        if (scope === "current") return snapshot.code === currentCode;
+        if (scope === "holdings") return holdings.has(snapshot.code);
+        if (scope === "pinned") return snapshot.pinned;
+        return true;
+      })
+      .filter((snapshot) => {
+        if (tone === "all") return true;
+        if (tone === "defensive") return snapshot.report?.stance === "谨慎防守";
+        const snapshotTone = trackingSnapshotTone(snapshot);
+        if (tone === "positive") return ["positive", "mixed"].includes(snapshotTone);
+        if (tone === "negative") return ["negative", "mixed"].includes(snapshotTone);
+        return snapshotTone === "neutral";
+      })
+      .filter((snapshot) => !needle || `${snapshot.name} ${snapshot.code}`.toLocaleLowerCase().includes(needle))
+      .sort((left, right) =>
+        Number(right.pinned) - Number(left.pinned) ||
+        new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+      );
+  }
+
+  function trackingSnapshotTrust(snapshot = {}, maximumLagMinutes = 30) {
+    const observedAt = validIsoTime(snapshot.createdAt || snapshot.facts?.observedAt);
+    const quoteAt = validIsoTime(snapshot.facts?.quote?.timestamp);
+    const source = text(snapshot.facts?.quote?.source, 80);
+    const hasCoreFacts = finite(snapshot.facts?.quote?.price) != null && finite(snapshot.facts?.technical?.score) != null;
+    if (!observedAt || !quoteAt || !source || !hasCoreFacts) {
+      return { status: "partial", label: "字段不完整", source: source || "来源未记录", observedAt, quoteAt, lagMinutes: null };
+    }
+    const lagMinutes = Math.max(0, (Date.parse(observedAt) - Date.parse(quoteAt)) / 60000);
+    if (lagMinutes > maximumLagMinutes) {
+      return { status: "lagged", label: "行情时间滞后", source, observedAt, quoteAt, lagMinutes };
+    }
+    return { status: "aligned", label: "时间匹配", source, observedAt, quoteAt, lagMinutes };
+  }
+
   function buildTrackingInstructions() {
     return [
       "你是一名审慎、经验丰富的A股交易研究员，擅长量价结构、风险控制和交易计划复盘。",
@@ -255,11 +448,20 @@
   return {
     CONFIDENCE_LEVELS,
     STANCES,
+    TRACKING_DEDUPE_MINUTES,
+    TRACKING_HISTORY_LIMIT,
     TRACKING_REPORT_SCHEMA,
     buildLocalTrackingReport,
     buildTrackingInput,
     buildTrackingInstructions,
+    equivalentTrackingSnapshots,
+    filterTrackingSnapshots,
+    normalizeTrackingHistory,
     normalizeTrackingReport,
+    normalizeTrackingSnapshot,
+    trackingSnapshotTone,
+    trackingSnapshotTrust,
+    upsertTrackingSnapshot,
     trackingTargets
   };
 });

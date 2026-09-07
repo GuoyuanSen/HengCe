@@ -277,6 +277,47 @@ test("AI workspace includes contextual questions with verified source labels", (
   assert.doesNotMatch(main, /research:select-file|file_data/);
 });
 
+test("AI tracking history is manageable, filterable and provenance-aware", () => {
+  assert.match(html, /id="clear-ai-history"/);
+  assert.match(html, /id="ai-history-scope"/);
+  assert.match(html, /value="holdings">仅看持仓/);
+  assert.match(html, /value="pinned">仅看置顶/);
+  assert.match(html, /id="ai-history-tone"/);
+  assert.match(html, /id="ai-history-search"/);
+  assert.match(renderer, /function renderAiHistory/);
+  assert.match(renderer, /upsertTrackingSnapshot/);
+  assert.match(renderer, /trackingSnapshotTrust/);
+  assert.match(renderer, /已合并更新最近记录/);
+  assert.match(renderer, /actionLabel:\s*"撤销"/);
+  assert.match(renderer, /重置前后比较基线/);
+  assert.match(styles, /\.ai-history-detail-grid/);
+  assert.match(styles, /\.history-trust\.lagged/);
+});
+
+test("successful page content remains visible during background refresh", () => {
+  assert.match(renderer, /!state\.hotspotsLoading \|\| Boolean\(state\.hotspots\)/);
+  assert.match(renderer, /!state\.recommendationsLoading \|\| Boolean\(state\.recommendations\)/);
+  assert.match(renderer, /!state\.compassLoading \|\| Boolean\(state\.compass\)/);
+  assert.match(renderer, /!state\.intelligenceLoading \|\| Boolean\(state\.intelligence\)/);
+  assert.match(renderer, /!state\.overnightLoading \|\| Boolean\(state\.overnight\)/);
+  assert.match(renderer, /\.workspace"\)\.scrollTop = 0/);
+});
+
+test("common destructive local actions offer confirmation or undo", () => {
+  assert.match(renderer, /已移出观察列表[\s\S]*?actionLabel:\s*"撤销"/);
+  assert.match(renderer, /确定删除[\s\S]*?持仓记录[\s\S]*?actionLabel:\s*"撤销"/);
+  assert.match(renderer, /手工事件已删除[\s\S]*?actionLabel:\s*"撤销"/);
+  assert.match(renderer, /交易流水已删除[\s\S]*?actionLabel:\s*"撤销"/);
+});
+
+test("document IDs are unique and static controls receive accessibility defaults", () => {
+  const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.match(renderer, /function initializeStaticUi/);
+  assert.match(renderer, /aria-current", "page"/);
+  assert.match(styles, /textarea:focus-visible/);
+});
+
 test("intelligence reminders support search, keywords and quiet hours", () => {
   assert.match(html, /id="intelligence-search"/);
   assert.match(html, /id="alerts-enabled"/);
